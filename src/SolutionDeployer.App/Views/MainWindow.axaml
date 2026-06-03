@@ -1,0 +1,162 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
+        x:Class="SolutionDeployer.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1100" Height="720" MinWidth="820" MinHeight="520"
+        Title="3ai Solution Deployer">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.logline">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, monospace" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style Selector="TextBlock.logline.error">
+            <Setter Property="Foreground" Value="#E05561" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="BorderBrush" Value="#33808080" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <!-- Top toolbar -->
+        <Border DockPanel.Dock="Top" Padding="10,8" Background="#11808080">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                    <Button Content="Open Solution…" Command="{Binding BrowseSolutionCommand}" />
+                    <Button Content="Reload" Command="{Binding ReloadCommand}" />
+                    <ComboBox ItemsSource="{Binding RecentSolutions}"
+                              SelectedItem="{Binding SolutionPath, Mode=OneWay}"
+                              PlaceholderText="Recent…" MinWidth="180"
+                              SelectionChanged="OnRecentSelectionChanged" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0"
+                           Text="{Binding SolutionPath}" TextTrimming="CharacterEllipsis"
+                           Opacity="0.7" />
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <TextBox Text="{Binding UpdateRepository}" PlaceholderText="owner/repo" MinWidth="160"
+                             ToolTip.Tip="GitHub repository to pull releases from" />
+                    <Button Content="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Padding="10,6" Background="#11808080">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <ProgressBar Width="120" Minimum="0" Maximum="100" Value="{Binding UpdateProgress}"
+                                 Height="6" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding UpdateStatus}" Opacity="0.8" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Action bar -->
+        <Border DockPanel.Dock="Top" Padding="10,6">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+                <Button Grid.Column="0" Content="Select All" Command="{Binding SelectAllCommand}" Margin="0,0,6,0" />
+                <Button Grid.Column="1" Content="Clear" Command="{Binding ClearSelectionCommand}" Margin="0,0,12,0" />
+                <CheckBox Grid.Column="2" Content="Run in parallel" IsChecked="{Binding RunInParallel}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
+                </TextBlock>
+                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6">
+                    <Button Content="Deploy Selected" Command="{Binding DeployCommand}"
+                            Classes="accent" IsEnabled="{Binding !IsRunning}" />
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main split: projects | log -->
+        <Grid ColumnDefinitions="*,5,1.2*" Margin="10,0,10,10">
+            <!-- Projects + profiles -->
+            <Border Grid.Column="0" Classes="card" Margin="0,4,0,0">
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Projects}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProjectViewModel">
+                                <Expander IsExpanded="{Binding IsExpanded}" Margin="0,0,0,4">
+                                    <Expander.Header>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <CheckBox IsChecked="{Binding IsSelected}" IsThreeState="True"
+                                                      IsEnabled="{Binding HasProfiles}" />
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Profiles.Count, StringFormat='({0} profiles)'}"
+                                                       Opacity="0.6" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <ItemsControl ItemsSource="{Binding Profiles}" Margin="20,4,0,4">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProfileViewModel">
+                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6">
+                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+                                                        <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                                                                  IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                            <Border Background="#22808080" CornerRadius="3" Padding="4,1">
+                                                                <TextBlock Text="{Binding FormatLabel}" FontSize="11" Opacity="0.8" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Method}" Opacity="0.6" VerticalAlignment="Center" FontSize="11" />
+                                                            <TextBlock Text="{Binding Target}" Opacity="0.6" VerticalAlignment="Center"
+                                                                       FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="240" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ResultText}"
+                                                                   Opacity="0.8" VerticalAlignment="Center" FontSize="11" />
+                                                        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                                            <ComboBox ItemsSource="{Binding Engines}"
+                                                                      SelectedItem="{Binding Engine}" MinWidth="90" FontSize="11" />
+                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
+                                                                     IsVisible="{Binding RequiresCredentials}" />
+                                                            <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
+                                                                     PasswordChar="•" IsVisible="{Binding RequiresCredentials}" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
+
+            <!-- Log console -->
+            <Border Grid.Column="2" Classes="card" Margin="0,4,0,0" Background="#0A000000">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                        <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Clear" Command="{Binding ClearLogCommand}" />
+                    </Grid>
+                    <ScrollViewer Name="LogScroller">
+                        <ItemsControl ItemsSource="{Binding Log}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:LogLine">
+                                    <TextBlock Classes="logline" Classes.error="{Binding IsError}" Text="{Binding Text}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

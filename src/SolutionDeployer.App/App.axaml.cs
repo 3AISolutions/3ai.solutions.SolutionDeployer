@@ -1,0 +1,41 @@
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Microsoft.Extensions.DependencyInjection;
+using SolutionDeployer.App.Services;
+using SolutionDeployer.App.ViewModels;
+using SolutionDeployer.App.Views;
+using SolutionDeployer.Core;
+
+namespace SolutionDeployer.App;
+
+public partial class App : Application
+{
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+    }
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var services = new ServiceCollection();
+            services.AddSolutionDeployerCore();
+            services.AddSingleton<IClassicDesktopStyleApplicationLifetime>(desktop);
+            services.AddSingleton<IFilePickerService, FilePickerService>();
+            services.AddSingleton<UpdateService>();
+            services.AddSingleton<MainWindowViewModel>();
+
+            var provider = services.BuildServiceProvider();
+            var viewModel = provider.GetRequiredService<MainWindowViewModel>();
+
+            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+
+            // Fire-and-forget startup update check (no-ops unless installed & configured).
+            _ = viewModel.RunStartupUpdateCheckAsync();
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+}
