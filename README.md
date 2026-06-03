@@ -66,3 +66,9 @@ Push a tag like `v1.2.3`. The [`release.yml`](.github/workflows/release.yml) wor
 self-contained app on Windows, macOS and Linux, packs each with Velopack's `vpk`, and uploads the
 installers + delta packages to the matching GitHub Release. The running app then discovers and
 applies them.
+
+## License
+
+Licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](LICENSE)
+(CC BY-NC-SA 4.0). You may share and adapt the material for **non-commercial** purposes, with
+attribution, and must distribute derivatives under the same license.

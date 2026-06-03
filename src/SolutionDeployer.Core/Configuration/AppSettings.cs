@@ -20,7 +20,7 @@ public sealed class AppSettings
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
     /// <summary>GitHub "owner/repo" used by the updater to find releases.</summary>
-    public string UpdateRepository { get; set; } = "OWNER/3ai.solutions.SolutionDeployer";
+    public string UpdateRepository { get; set; } = "3AISolutions/3ai.solutions.SolutionDeployer";
 
     /// <summary>Automatically check for updates on startup.</summary>
     public bool CheckForUpdatesOnStartup { get; set; } = true;
