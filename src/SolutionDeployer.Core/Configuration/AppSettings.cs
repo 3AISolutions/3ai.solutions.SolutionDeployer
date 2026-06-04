@@ -25,6 +25,18 @@ public sealed class AppSettings
     /// <summary>Automatically check for updates on startup.</summary>
     public bool CheckForUpdatesOnStartup { get; set; } = true;
 
+    /// <summary>The last solution that was opened (re-opened on startup when enabled).</summary>
+    public string? LastSolutionPath { get; set; }
+
+    /// <summary>Reopen <see cref="LastSolutionPath"/> and its selections on startup.</summary>
+    public bool AutoLoadLastSolution { get; set; } = true;
+
+    /// <summary>
+    /// Remembered profile selections per solution path, so the same targets are re-checked when a
+    /// solution is reopened. Keyed by solution path.
+    /// </summary>
+    public Dictionary<string, List<SavedProfileSelection>> SavedSelections { get; set; } = new();
+
     public void AddRecentSolution(string path)
     {
         RecentSolutions.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));

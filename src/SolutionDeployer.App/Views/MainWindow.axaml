@@ -34,10 +34,12 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                     <Button Content="Open Solution…" Command="{Binding BrowseSolutionCommand}" />
                     <Button Content="Reload" Command="{Binding ReloadCommand}" />
-                    <ComboBox ItemsSource="{Binding RecentSolutions}"
-                              SelectedItem="{Binding SolutionPath, Mode=OneWay}"
+                    <ComboBox Name="RecentCombo" ItemsSource="{Binding RecentSolutions}"
                               PlaceholderText="Recent…" MinWidth="180"
                               SelectionChanged="OnRecentSelectionChanged" />
+                    <CheckBox Content="Auto-load last" IsChecked="{Binding AutoLoadLastSolution}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Reopen the last solution and selections on startup" />
                 </StackPanel>
                 <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0"
                            Text="{Binding SolutionPath}" TextTrimming="CharacterEllipsis"
@@ -124,6 +126,10 @@
                                                                      IsVisible="{Binding RequiresCredentials}" />
                                                             <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
                                                                      PasswordChar="•" IsVisible="{Binding RequiresCredentials}" />
+                                                            <CheckBox Content="Remember" IsChecked="{Binding RememberPassword}"
+                                                                      FontSize="11" VerticalAlignment="Center"
+                                                                      IsVisible="{Binding CanRememberPassword}"
+                                                                      ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>
