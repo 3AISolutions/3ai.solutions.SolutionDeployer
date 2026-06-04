@@ -1,0 +1,26 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2EA8FF"/>
+      <stop offset="1" stop-color="#1366D6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- App tile -->
+  <rect x="0" y="0" width="256" height="256" rx="52" ry="52" fill="url(#bg)"/>
+
+  <!-- Subtle top highlight -->
+  <rect x="0" y="0" width="256" height="128" rx="52" ry="52" fill="#FFFFFF" opacity="0.06"/>
+
+  <!-- Deploy arrow (head + shaft); white with rounded joins -->
+  <path d="M128 44 L188 116 L156 116 L156 178 L100 178 L100 116 L68 116 Z"
+        fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14"
+        stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Launch platform -->
+  <rect x="74" y="196" width="108" height="20" rx="10" ry="10" fill="#FFFFFF"/>
+
+  <!-- Thrust ticks under the platform -->
+  <rect x="96"  y="226" width="16" height="10" rx="5" ry="5" fill="#FFFFFF" opacity="0.85"/>
+  <rect x="144" y="226" width="16" height="10" rx="5" ry="5" fill="#FFFFFF" opacity="0.85"/>
+</svg>

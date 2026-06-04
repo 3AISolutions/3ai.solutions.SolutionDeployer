@@ -27,12 +27,15 @@ jobs:
           - os: windows-latest
             rid: win-x64
             exe: SolutionDeployer.App.exe
+            icon: src/SolutionDeployer.App/Assets/app-icon.ico
           - os: ubuntu-latest
             rid: linux-x64
             exe: SolutionDeployer.App
+            icon: src/SolutionDeployer.App/Assets/app-icon.png
           - os: macos-latest
             rid: osx-arm64
             exe: SolutionDeployer.App
+            icon: src/SolutionDeployer.App/Assets/app-icon.icns
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -64,7 +67,8 @@ jobs:
             --packVersion "$VERSION" \
             --packDir publish \
             --mainExe "${{ matrix.exe }}" \
-            --packTitle "3ai Solution Deployer"
+            --packTitle "3ai Solution Deployer" \
+            --icon "${{ matrix.icon }}"
 
       - name: Upload release assets
         shell: bash
