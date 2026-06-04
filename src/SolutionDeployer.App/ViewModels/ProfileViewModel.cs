@@ -9,15 +9,33 @@ namespace SolutionDeployer.App.ViewModels;
 /// </summary>
 public partial class ProfileViewModel : ObservableObject
 {
-    public ProfileViewModel(ProjectViewModel parent, PublishProfile profile, PublishEngineKind defaultEngine, string? rememberedUserName)
+    public ProfileViewModel(
+        ProjectViewModel parent,
+        PublishProfile profile,
+        PublishEngineKind defaultEngine,
+        string? rememberedUserName,
+        string? rememberedPassword,
+        bool credentialStoreAvailable)
     {
         Parent = parent;
         Profile = profile;
         _engine = defaultEngine;
         _userName = rememberedUserName ?? profile.UserName ?? string.Empty;
+        CredentialStoreAvailable = credentialStoreAvailable;
+        if (rememberedPassword is not null)
+        {
+            _password = rememberedPassword;
+            _rememberPassword = true;
+        }
     }
 
     public ProjectViewModel Parent { get; }
+
+    /// <summary>Whether a secure OS credential store exists (controls the "remember" checkbox).</summary>
+    public bool CredentialStoreAvailable { get; }
+
+    /// <summary>Show the remember-password checkbox only for credentialed profiles when storage exists.</summary>
+    public bool CanRememberPassword => RequiresCredentials && CredentialStoreAvailable;
 
     public PublishProfile Profile { get; }
 
@@ -54,6 +72,9 @@ public partial class ProfileViewModel : ObservableObject
     [ObservableProperty]
     private string _resultText = string.Empty;
 
+    [ObservableProperty]
+    private bool _rememberPassword;
+
     public string StatusGlyph => Status switch
     {
         PublishStatus.Running => "…",
@@ -64,6 +85,9 @@ public partial class ProfileViewModel : ObservableObject
     };
 
     partial void OnIsSelectedChanged(bool value) => Parent.RefreshSelectionState();
+
+    // Persist engine changes too (re-selecting a target with a different engine should be remembered).
+    partial void OnEngineChanged(PublishEngineKind value) => Parent.RaiseStateChanged();
 
     public PublishCredentials BuildCredentials() => new()
     {

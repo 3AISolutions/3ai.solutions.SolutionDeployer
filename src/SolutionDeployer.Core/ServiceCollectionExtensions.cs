@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DeploymentRunner>();
 
         services.AddSingleton<SettingsStore>();
+        services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());
 
         return services;
     }

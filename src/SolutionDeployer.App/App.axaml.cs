@@ -32,10 +32,17 @@ public partial class App : Application
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
 
-            // Fire-and-forget startup update check (no-ops unless installed & configured).
-            _ = viewModel.RunStartupUpdateCheckAsync();
+            // Fire-and-forget startup work: reopen the last solution, then check for updates.
+            // Continuations resume on the UI thread (Avalonia sync context), so VM/UI access is safe.
+            _ = StartupAsync(viewModel);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task StartupAsync(MainWindowViewModel viewModel)
+    {
+        await viewModel.RunStartupLoadAsync();
+        await viewModel.RunStartupUpdateCheckAsync();
     }
 }

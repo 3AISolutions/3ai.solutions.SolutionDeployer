@@ -18,9 +18,11 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SettingsStore _settingsStore;
     private readonly IFilePickerService _filePicker;
     private readonly UpdateService _updateService;
+    private readonly ICredentialStore _credentialStore;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
+    private bool _applyingState;
     private const int MaxLogLines = 8000;
 
     public MainWindowViewModel(
@@ -29,7 +31,8 @@ public partial class MainWindowViewModel : ObservableObject
         IPublishEngineFactory engineFactory,
         SettingsStore settingsStore,
         IFilePickerService filePicker,
-        UpdateService updateService)
+        UpdateService updateService,
+        ICredentialStore credentialStore)
     {
         _solutionParser = solutionParser;
         _deploymentRunner = deploymentRunner;
@@ -37,10 +40,12 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore = settingsStore;
         _filePicker = filePicker;
         _updateService = updateService;
+        _credentialStore = credentialStore;
         _settings = settingsStore.Load();
 
         _runInParallel = _settings.RunInParallel;
         _updateRepository = _settings.UpdateRepository;
+        _autoLoadLastSolution = _settings.AutoLoadLastSolution;
         foreach (var recent in _settings.RecentSolutions)
             RecentSolutions.Add(recent);
     }
@@ -71,6 +76,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _runInParallel;
+
+    [ObservableProperty]
+    private bool _autoLoadLastSolution;
+
+    partial void OnAutoLoadLastSolutionChanged(bool value)
+    {
+        _settings.AutoLoadLastSolution = value;
+        _settingsStore.Save(_settings);
+    }
 
     [ObservableProperty]
     private string _updateRepository = string.Empty;
@@ -125,19 +139,29 @@ public partial class MainWindowViewModel : ObservableObject
             var solution = await _solutionParser.ParseAsync(path);
             SolutionPath = solution.SolutionPath;
 
+            // Suppress selection persistence while we build & restore the tree.
+            _applyingState = true;
+
+            var credentialsAvailable = _credentialStore.IsAvailable;
             foreach (var project in solution.Projects)
             {
                 var projectVm = new ProjectViewModel(project);
-                projectVm.SelectionChanged += () => OnPropertyChanged(nameof(SelectedCount));
+                projectVm.SelectionChanged += OnProjectSelectionChanged;
                 foreach (var profile in project.Profiles)
                 {
-                    _settings.RememberedUserNames.TryGetValue(profile.FilePath, out var remembered);
-                    projectVm.Profiles.Add(new ProfileViewModel(projectVm, profile, _settings.DefaultEngine, remembered));
+                    _settings.RememberedUserNames.TryGetValue(profile.FilePath, out var rememberedUser);
+                    var rememberedPassword = credentialsAvailable ? _credentialStore.Get(profile.FilePath) : null;
+                    projectVm.Profiles.Add(new ProfileViewModel(
+                        projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable));
                 }
                 Projects.Add(projectVm);
             }
 
+            RestoreSelection(solution.SolutionPath);
+            _applyingState = false;
+
             _settings.AddRecentSolution(solution.SolutionPath);
+            _settings.LastSolutionPath = solution.SolutionPath;
             _settingsStore.Save(_settings);
             SyncRecent();
 
@@ -153,9 +177,60 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
+            _applyingState = false;
             IsLoading = false;
             OnPropertyChanged(nameof(SelectedCount));
         }
+    }
+
+    private void OnProjectSelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedCount));
+        SaveCurrentSelection();
+    }
+
+    /// <summary>Re-check the profiles (and restore engines) that were selected last time for this solution.</summary>
+    private void RestoreSelection(string solutionPath)
+    {
+        if (!_settings.SavedSelections.TryGetValue(solutionPath, out var saved) || saved.Count == 0)
+            return;
+
+        foreach (var sel in saved)
+        {
+            var profile = Projects
+                .FirstOrDefault(p => p.Name == sel.Project)?
+                .Profiles.FirstOrDefault(pr => pr.Name == sel.Profile);
+            if (profile is null)
+                continue;
+
+            profile.Engine = sel.Engine;
+            profile.IsSelected = true;
+        }
+    }
+
+    /// <summary>Persist the current selection (selected profiles + engines) for the open solution.</summary>
+    private void SaveCurrentSelection()
+    {
+        if (_applyingState || string.IsNullOrEmpty(SolutionPath))
+            return;
+
+        var selection = Projects
+            .SelectMany(p => p.Profiles)
+            .Where(pr => pr.IsSelected)
+            .Select(pr => new SavedProfileSelection
+            {
+                Project = pr.Parent.Name,
+                Profile = pr.Name,
+                Engine = pr.Engine,
+            })
+            .ToList();
+
+        if (selection.Count == 0)
+            _settings.SavedSelections.Remove(SolutionPath);
+        else
+            _settings.SavedSelections[SolutionPath] = selection;
+
+        _settingsStore.Save(_settings);
     }
 
     private void SyncRecent()
@@ -175,10 +250,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void SetAllSelected(bool value)
     {
+        _applyingState = true;
         foreach (var project in Projects)
             foreach (var profile in project.Profiles)
                 profile.IsSelected = value;
+        _applyingState = false;
+
         OnPropertyChanged(nameof(SelectedCount));
+        SaveCurrentSelection();
     }
 
     // ---- Deployment -------------------------------------------------------
@@ -233,6 +312,9 @@ public partial class MainWindowViewModel : ObservableObject
             // Remember (non-secret) usernames for next time.
             if (!string.IsNullOrWhiteSpace(profileVm.UserName))
                 _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
+
+            // Remember passwords only on opt-in, and only in the OS secure store — never in settings.json.
+            PersistPassword(profileVm);
         }
 
         _settingsStore.Save(_settings);
@@ -309,6 +391,31 @@ public partial class MainWindowViewModel : ObservableObject
         Log.Add(line);
         if (Log.Count > MaxLogLines)
             Log.RemoveAt(0);
+    }
+
+    /// <summary>Saves or clears a profile's password in the OS secure store based on its opt-in flag.</summary>
+    private void PersistPassword(ProfileViewModel profileVm)
+    {
+        if (!_credentialStore.IsAvailable)
+            return;
+
+        if (profileVm.RememberPassword && !string.IsNullOrEmpty(profileVm.Password))
+            _credentialStore.Set(profileVm.Profile.FilePath, profileVm.Password);
+        else
+            _credentialStore.Delete(profileVm.Profile.FilePath);
+    }
+
+    // ---- Startup ----------------------------------------------------------
+
+    /// <summary>Reopens the last solution (and its saved selections) when enabled.</summary>
+    public async Task RunStartupLoadAsync()
+    {
+        if (AutoLoadLastSolution &&
+            !string.IsNullOrEmpty(_settings.LastSolutionPath) &&
+            File.Exists(_settings.LastSolutionPath))
+        {
+            await LoadSolutionAsync(_settings.LastSolutionPath);
+        }
     }
 
     // ---- Updates ----------------------------------------------------------

@@ -28,8 +28,11 @@ public partial class ProjectViewModel : ObservableObject
 
     public ObservableCollection<ProfileViewModel> Profiles { get; }
 
-    /// <summary>Raised whenever a child profile's selection changes.</summary>
+    /// <summary>Raised whenever a child profile's selection or engine changes.</summary>
     public event Action? SelectionChanged;
+
+    /// <summary>Notify listeners of a state change (e.g. a child engine choice) without recomputing tri-state.</summary>
+    public void RaiseStateChanged() => SelectionChanged?.Invoke();
 
     [ObservableProperty]
     private bool _isExpanded = true;
