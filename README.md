@@ -1,17 +1,22 @@
 # 3ai Solution Deployer
 
-A cross-platform (Windows / macOS / Linux) desktop app for publishing .NET solutions from their
-publish profiles. Open a `.sln` or `.slnx`, tick any combination of project → profile targets, and
-deploy them — sequentially or in parallel — with live build output. Self-updates from GitHub Releases.
+A cross-platform (Windows / macOS / Linux) desktop app for publishing .NET projects from their
+publish profiles. Add `.sln`/`.slnx` solutions **and** individual `.csproj`/`.fsproj`/`.vbproj`
+projects to a persistent list, tick any combination of project → profile targets, and deploy them —
+sequentially or in parallel — with live build output. Self-updates from GitHub Releases.
 
 ## Features
 
-- **Solution parsing** for both `.sln` and `.slnx`, via the official
-  `Microsoft.VisualStudio.SolutionPersistence` serializer (the one that backs `dotnet sln`).
+- **Add from solutions or projects.** Add a `.sln`/`.slnx` (parsed via the official
+  `Microsoft.VisualStudio.SolutionPersistence` serializer that backs `dotnet sln`) or a standalone
+  project file. The added list **persists across restarts** until you remove items.
+- **Solution sources show only publishable projects** — projects with no publish profile are omitted
+  when added from a solution, but a project added directly is always included (even with no profiles).
 - **Profile discovery** — finds `.pubxml` and `.PublishSettings` files under each project's
   `Properties/PublishProfiles`, reading method (MSDeploy / FileSystem / FTP), server URL, IIS app
   path and username for display. `*.pubxml.user` (encrypted secrets) is ignored.
 - **Any combination** of project + profile targets selectable per run; tri-state project checkboxes.
+  Selections (and per-profile engine choices) are remembered per source.
 - **Two publish engines**, selectable per profile:
   - `dotnet publish` — cross-platform, uses the .NET SDK.
   - `msbuild.exe /t:Publish` — Windows-only (located via vswhere), for classic Web Deploy /

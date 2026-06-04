@@ -10,6 +10,9 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
 
 - **`src/SolutionDeployer.Core`** — all logic, no UI dependency:
   - `Solutions/SolutionParser` parses `.sln`/`.slnx` via `Microsoft.VisualStudio.SolutionPersistence`.
+  - `Solutions/SourceLoader` resolves a `DeploymentSource` (solution **or** standalone project) into
+    its projects; solutions are filtered to projects that have ≥1 profile, `Projects/ProjectLoader`
+    loads a single project unfiltered.
   - `Profiles/ProfileDiscovery` scans `Properties/PublishProfiles` for `.pubxml` / `.PublishSettings`.
   - `Publishing/` — `IPublishEngine` with `DotnetPublishEngine` and `MsBuildPublishEngine`
     (the latter locates `msbuild.exe` via `MsBuildLocator`/vswhere, Windows only). `ProcessRunner`

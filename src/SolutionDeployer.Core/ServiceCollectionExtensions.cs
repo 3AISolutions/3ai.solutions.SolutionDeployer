@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Profiles;
+using SolutionDeployer.Core.Projects;
 using SolutionDeployer.Core.Publishing;
 using SolutionDeployer.Core.Solutions;
 
@@ -13,6 +14,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IProfileDiscovery, ProfileDiscovery>();
         services.AddSingleton<ISolutionParser, SolutionParser>();
+        services.AddSingleton<IProjectLoader, ProjectLoader>();
+        services.AddSingleton<ISourceLoader, SourceLoader>();
 
         services.AddSingleton<ProcessRunner>();
         services.AddSingleton<MsBuildLocator>();
