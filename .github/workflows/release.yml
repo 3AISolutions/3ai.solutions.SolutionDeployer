@@ -22,6 +22,9 @@ jobs:
   release:
     strategy:
       fail-fast: false
+      # Serialize the OS legs: each runs `vpk upload --merge`, and concurrent
+      # create/convert of the same GitHub release races ("Validation Failed").
+      max-parallel: 1
       matrix:
         include:
           - os: windows-latest
