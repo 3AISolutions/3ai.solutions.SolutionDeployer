@@ -32,18 +32,17 @@
         <Border DockPanel.Dock="Top" Padding="10,8" Background="#11808080">
             <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                    <Button Content="Open Solution…" Command="{Binding BrowseSolutionCommand}" />
-                    <Button Content="Reload" Command="{Binding ReloadCommand}" />
+                    <Button Content="Add Solution…" Command="{Binding AddSolutionCommand}" />
+                    <Button Content="Add Project…" Command="{Binding AddProjectCommand}" />
+                    <Button Content="Refresh" Command="{Binding RefreshAllCommand}"
+                            ToolTip.Tip="Re-read all added sources from disk" />
                     <ComboBox Name="RecentCombo" ItemsSource="{Binding RecentSolutions}"
                               PlaceholderText="Recent…" MinWidth="180"
                               SelectionChanged="OnRecentSelectionChanged" />
-                    <CheckBox Content="Auto-load last" IsChecked="{Binding AutoLoadLastSolution}"
+                    <CheckBox Content="Restore on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
                               VerticalAlignment="Center"
-                              ToolTip.Tip="Reopen the last solution and selections on startup" />
+                              ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
                 </StackPanel>
-                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0"
-                           Text="{Binding SolutionPath}" TextTrimming="CharacterEllipsis"
-                           Opacity="0.7" />
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
                     <TextBox Text="{Binding UpdateRepository}" PlaceholderText="owner/repo" MinWidth="160"
                              ToolTip.Tip="GitHub repository to pull releases from" />
@@ -83,12 +82,39 @@
 
         <!-- Main split: projects | log -->
         <Grid ColumnDefinitions="*,5,1.2*" Margin="10,0,10,10">
-            <!-- Projects + profiles -->
+            <!-- Sources → projects → profiles -->
             <Border Grid.Column="0" Classes="card" Margin="0,4,0,0">
-                <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding Projects}">
+                <Panel>
+                    <TextBlock Text="Add a solution or project to begin." Opacity="0.5"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding !HasSources}" />
+                    <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Sources}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ProjectViewModel">
+                            <DataTemplate x:DataType="vm:SourceViewModel">
+                              <Expander IsExpanded="{Binding IsExpanded}" Margin="0,0,0,6">
+                                <Expander.Header>
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                        <Border Grid.Column="0" Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding KindLabel}" FontSize="11" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Projects.Count, StringFormat='({0})'}" Opacity="0.6" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Problem}" Foreground="#E05561" FontSize="11"
+                                                       VerticalAlignment="Center" IsVisible="{Binding HasProblem}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Path}" Opacity="0.4" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="12,0" TextTrimming="CharacterEllipsis" />
+                                        <Button Grid.Column="3" Content="✕" Padding="7,1" Background="Transparent"
+                                                ToolTip.Tip="Remove this source"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveSourceCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Expander.Header>
+                                <ItemsControl ItemsSource="{Binding Projects}" Margin="14,2,0,2">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProjectViewModel">
                                 <Expander IsExpanded="{Binding IsExpanded}" Margin="0,0,0,4">
                                     <Expander.Header>
                                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -139,8 +165,13 @@
                                 </Expander>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                              </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </ScrollViewer>
+                    </ScrollViewer>
+                </Panel>
             </Border>
 
             <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />

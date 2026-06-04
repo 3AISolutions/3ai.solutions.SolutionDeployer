@@ -37,6 +37,63 @@ public sealed class SettingsAndCredentialTests
     }
 
     [Fact]
+    public void Sources_round_trip_and_dedupe()
+    {
+        var temp = Path.Combine(Path.GetTempPath(), $"sd_settings_{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SettingsStore(temp);
+            var settings = store.Load();
+
+            Assert.True(settings.AddSource(DeploymentSource.Solution(@"C:\repo\App.slnx")));
+            Assert.True(settings.AddSource(DeploymentSource.Project(@"C:\repo\Lib\Lib.csproj")));
+            Assert.False(settings.AddSource(DeploymentSource.Solution(@"C:\repo\App.slnx"))); // dupe
+            store.Save(settings);
+
+            var reloaded = new SettingsStore(temp).Load();
+            Assert.Equal(2, reloaded.Sources.Count);
+            Assert.Contains(reloaded.Sources, s => s.Kind == SourceKind.Solution && s.Path == @"C:\repo\App.slnx");
+            Assert.Contains(reloaded.Sources, s => s.Kind == SourceKind.Project && s.Path == @"C:\repo\Lib\Lib.csproj");
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
+    [Fact]
+    public void MigrateLegacy_seeds_sources_from_last_solution()
+    {
+        var settings = new AppSettings { LastSolutionPath = @"C:\repo\App.slnx", AutoLoadLastSolution = false };
+
+        settings.MigrateLegacy();
+
+        var source = Assert.Single(settings.Sources);
+        Assert.Equal(SourceKind.Solution, source.Kind);
+        Assert.Equal(@"C:\repo\App.slnx", source.Path);
+        Assert.False(settings.RestoreSourcesOnStartup);
+        Assert.Null(settings.LastSolutionPath);
+
+        // Idempotent: running again doesn't duplicate.
+        settings.MigrateLegacy();
+        Assert.Single(settings.Sources);
+    }
+
+    [Fact]
+    public void RemoveSource_drops_its_saved_selection()
+    {
+        var settings = new AppSettings();
+        var source = DeploymentSource.Project(@"C:\repo\Lib\Lib.csproj");
+        settings.AddSource(source);
+        settings.SavedSelections[source.Path] = [new SavedProfileSelection { Project = "Lib", Profile = "Prod" }];
+
+        settings.RemoveSource(source);
+
+        Assert.Empty(settings.Sources);
+        Assert.False(settings.SavedSelections.ContainsKey(source.Path));
+    }
+
+    [Fact]
     public void Settings_never_serialize_a_password_field()
     {
         var temp = Path.Combine(Path.GetTempPath(), $"sd_settings_{Guid.NewGuid():N}.json");

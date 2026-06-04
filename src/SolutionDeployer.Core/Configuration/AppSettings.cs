@@ -25,17 +25,25 @@ public sealed class AppSettings
     /// <summary>Automatically check for updates on startup.</summary>
     public bool CheckForUpdatesOnStartup { get; set; } = true;
 
-    /// <summary>The last solution that was opened (re-opened on startup when enabled).</summary>
-    public string? LastSolutionPath { get; set; }
+    /// <summary>The user-curated list of added items (solutions and standalone projects).</summary>
+    public List<DeploymentSource> Sources { get; set; } = [];
 
-    /// <summary>Reopen <see cref="LastSolutionPath"/> and its selections on startup.</summary>
-    public bool AutoLoadLastSolution { get; set; } = true;
+    /// <summary>Re-load <see cref="Sources"/> (and their selections) on startup.</summary>
+    public bool RestoreSourcesOnStartup { get; set; } = true;
 
     /// <summary>
-    /// Remembered profile selections per solution path, so the same targets are re-checked when a
-    /// solution is reopened. Keyed by solution path.
+    /// Remembered profile selections, keyed by source path (solution or project). Lets the same
+    /// targets be re-checked when a source is reloaded.
     /// </summary>
     public Dictionary<string, List<SavedProfileSelection>> SavedSelections { get; set; } = new();
+
+    // --- Legacy (pre-source-list) fields, kept for one-time migration only. ---
+
+    /// <summary>Legacy single last-opened solution. Superseded by <see cref="Sources"/>.</summary>
+    public string? LastSolutionPath { get; set; }
+
+    /// <summary>Legacy auto-load toggle. Superseded by <see cref="RestoreSourcesOnStartup"/>.</summary>
+    public bool AutoLoadLastSolution { get; set; } = true;
 
     public void AddRecentSolution(string path)
     {
@@ -44,4 +52,32 @@ public sealed class AppSettings
         if (RecentSolutions.Count > 10)
             RecentSolutions.RemoveRange(10, RecentSolutions.Count - 10);
     }
+
+    public bool AddSource(DeploymentSource source)
+    {
+        if (Sources.Any(s => s.Kind == source.Kind && PathEquals(s.Path, source.Path)))
+            return false;
+        Sources.Add(source);
+        return true;
+    }
+
+    public void RemoveSource(DeploymentSource source)
+    {
+        Sources.RemoveAll(s => s.Kind == source.Kind && PathEquals(s.Path, source.Path));
+        SavedSelections.Remove(source.Path);
+    }
+
+    /// <summary>One-time migration from the pre-source-list shape: seed Sources from the old last solution.</summary>
+    public void MigrateLegacy()
+    {
+        if (Sources.Count == 0 && !string.IsNullOrEmpty(LastSolutionPath))
+        {
+            Sources.Add(DeploymentSource.Solution(LastSolutionPath));
+            RestoreSourcesOnStartup = AutoLoadLastSolution;
+        }
+        LastSolutionPath = null;
+    }
+
+    private static bool PathEquals(string a, string b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

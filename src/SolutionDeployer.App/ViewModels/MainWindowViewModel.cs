@@ -12,7 +12,7 @@ namespace SolutionDeployer.App.ViewModels;
 
 public partial class MainWindowViewModel : ObservableObject
 {
-    private readonly ISolutionParser _solutionParser;
+    private readonly ISourceLoader _sourceLoader;
     private readonly DeploymentRunner _deploymentRunner;
     private readonly IPublishEngineFactory _engineFactory;
     private readonly SettingsStore _settingsStore;
@@ -26,7 +26,7 @@ public partial class MainWindowViewModel : ObservableObject
     private const int MaxLogLines = 8000;
 
     public MainWindowViewModel(
-        ISolutionParser solutionParser,
+        ISourceLoader sourceLoader,
         DeploymentRunner deploymentRunner,
         IPublishEngineFactory engineFactory,
         SettingsStore settingsStore,
@@ -34,7 +34,7 @@ public partial class MainWindowViewModel : ObservableObject
         UpdateService updateService,
         ICredentialStore credentialStore)
     {
-        _solutionParser = solutionParser;
+        _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
         _engineFactory = engineFactory;
         _settingsStore = settingsStore;
@@ -42,25 +42,19 @@ public partial class MainWindowViewModel : ObservableObject
         _updateService = updateService;
         _credentialStore = credentialStore;
         _settings = settingsStore.Load();
+        _settings.MigrateLegacy();
 
         _runInParallel = _settings.RunInParallel;
         _updateRepository = _settings.UpdateRepository;
-        _autoLoadLastSolution = _settings.AutoLoadLastSolution;
-        foreach (var recent in _settings.RecentSolutions)
-            RecentSolutions.Add(recent);
+        _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
+        SyncRecent();
     }
 
-    public ObservableCollection<ProjectViewModel> Projects { get; } = [];
+    public ObservableCollection<SourceViewModel> Sources { get; } = [];
 
     public ObservableCollection<LogLine> Log { get; } = [];
 
     public ObservableCollection<string> RecentSolutions { get; } = [];
-
-    public IReadOnlyList<PublishEngineKind> Engines { get; } =
-        [PublishEngineKind.Dotnet, PublishEngineKind.MsBuild];
-
-    [ObservableProperty]
-    private string? _solutionPath;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
@@ -72,19 +66,13 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isRunning;
 
     [ObservableProperty]
-    private string _statusMessage = "Open a solution to begin.";
+    private string _statusMessage = "Add a solution or project to begin.";
 
     [ObservableProperty]
     private bool _runInParallel;
 
     [ObservableProperty]
-    private bool _autoLoadLastSolution;
-
-    partial void OnAutoLoadLastSolutionChanged(bool value)
-    {
-        _settings.AutoLoadLastSolution = value;
-        _settingsStore.Save(_settings);
-    }
+    private bool _restoreSourcesOnStartup;
 
     [ObservableProperty]
     private string _updateRepository = string.Empty;
@@ -101,49 +89,132 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
-    public int SelectedCount =>
-        Projects.Sum(p => p.Profiles.Count(pr => pr.IsSelected));
+    partial void OnRestoreSourcesOnStartupChanged(bool value)
+    {
+        _settings.RestoreSourcesOnStartup = value;
+        _settingsStore.Save(_settings);
+    }
 
-    // ---- Solution loading -------------------------------------------------
+    public int SelectedCount =>
+        Sources.SelectMany(s => s.Projects).Sum(p => p.Profiles.Count(pr => pr.IsSelected));
+
+    public bool HasSources => Sources.Count > 0;
+
+    // ---- Adding / removing sources ---------------------------------------
 
     [RelayCommand]
-    private async Task BrowseSolutionAsync()
+    private async Task AddSolutionAsync()
     {
         var path = await _filePicker.PickSolutionAsync();
         if (!string.IsNullOrEmpty(path))
-            await LoadSolutionAsync(path);
+            await AddSourceAsync(DeploymentSource.Solution(path));
+    }
+
+    [RelayCommand]
+    private async Task AddProjectAsync()
+    {
+        var path = await _filePicker.PickProjectAsync();
+        if (!string.IsNullOrEmpty(path))
+            await AddSourceAsync(DeploymentSource.Project(path));
     }
 
     [RelayCommand]
     private async Task OpenRecentAsync(string? path)
     {
-        if (!string.IsNullOrEmpty(path))
-            await LoadSolutionAsync(path);
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        var ext = Path.GetExtension(path);
+        var kind = ext.Equals(".sln", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".slnx", StringComparison.OrdinalIgnoreCase)
+            ? SourceKind.Solution
+            : SourceKind.Project;
+        await AddSourceAsync(new DeploymentSource { Kind = kind, Path = Path.GetFullPath(path) });
+    }
+
+    private async Task AddSourceAsync(DeploymentSource source)
+    {
+        source.Path = Path.GetFullPath(source.Path);
+
+        if (!_settings.AddSource(source))
+        {
+            StatusMessage = $"{source.Name} is already in the list.";
+            return;
+        }
+
+        _settings.AddRecentSolution(source.Path);
+        _settingsStore.Save(_settings);
+        SyncRecent();
+
+        IsLoading = true;
+        try
+        {
+            var vm = await BuildSourceAsync(source);
+            Sources.Add(vm);
+            StatusMessage = SummariseSource(vm);
+        }
+        finally
+        {
+            IsLoading = false;
+            OnPropertyChanged(nameof(SelectedCount));
+            OnPropertyChanged(nameof(HasSources));
+        }
     }
 
     [RelayCommand]
-    private async Task ReloadAsync()
+    private void RemoveSource(SourceViewModel? source)
     {
-        if (!string.IsNullOrEmpty(SolutionPath))
-            await LoadSolutionAsync(SolutionPath);
+        if (source is null)
+            return;
+
+        Sources.Remove(source);
+        _settings.RemoveSource(source.Source);
+        _settingsStore.Save(_settings);
+
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(HasSources));
+        StatusMessage = $"Removed {source.Name}.";
     }
 
-    private async Task LoadSolutionAsync(string path)
+    [RelayCommand]
+    private async Task RefreshAllAsync()
     {
-        IsLoading = true;
-        StatusMessage = $"Loading {Path.GetFileName(path)}…";
-        Projects.Clear();
+        if (Sources.Count == 0)
+            return;
 
+        IsLoading = true;
+        var current = _settings.Sources.ToList();
+        Sources.Clear();
         try
         {
-            var solution = await _solutionParser.ParseAsync(path);
-            SolutionPath = solution.SolutionPath;
+            foreach (var source in current)
+                Sources.Add(await BuildSourceAsync(source));
+            StatusMessage = $"Refreshed {Sources.Count} source(s).";
+        }
+        finally
+        {
+            IsLoading = false;
+            OnPropertyChanged(nameof(SelectedCount));
+            OnPropertyChanged(nameof(HasSources));
+        }
+    }
 
-            // Suppress selection persistence while we build & restore the tree.
-            _applyingState = true;
+    /// <summary>Loads a source from disk and builds its view-model tree, restoring saved selections.</summary>
+    private async Task<SourceViewModel> BuildSourceAsync(DeploymentSource source)
+    {
+        var vm = new SourceViewModel(source);
+        var loaded = await _sourceLoader.LoadAsync(source);
 
+        if (loaded.IsMissing)
+            vm.Problem = "File not found on disk.";
+        else if (loaded.Error is not null)
+            vm.Problem = loaded.Error;
+
+        _applyingState = true;
+        try
+        {
             var credentialsAvailable = _credentialStore.IsAvailable;
-            foreach (var project in solution.Projects)
+            foreach (var project in loaded.Projects)
             {
                 var projectVm = new ProjectViewModel(project);
                 projectVm.SelectionChanged += OnProjectSelectionChanged;
@@ -154,34 +225,41 @@ public partial class MainWindowViewModel : ObservableObject
                     projectVm.Profiles.Add(new ProfileViewModel(
                         projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable));
                 }
-                Projects.Add(projectVm);
+                vm.Projects.Add(projectVm);
             }
 
-            RestoreSelection(solution.SolutionPath);
-            _applyingState = false;
-
-            _settings.AddRecentSolution(solution.SolutionPath);
-            _settings.LastSolutionPath = solution.SolutionPath;
-            _settingsStore.Save(_settings);
-            SyncRecent();
-
-            var profileCount = Projects.Sum(p => p.Profiles.Count);
-            StatusMessage = $"{solution.Name}: {Projects.Count} project(s), {profileCount} profile(s).";
-            if (profileCount == 0)
-                StatusMessage += " No publish profiles found (looked in Properties/PublishProfiles).";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Failed to load solution: {ex.Message}";
-            Log.Add(LogLine.System($"ERROR: {ex.Message}"));
+            RestoreSelection(vm);
         }
         finally
         {
             _applyingState = false;
-            IsLoading = false;
-            OnPropertyChanged(nameof(SelectedCount));
         }
+
+        return vm;
     }
+
+    private static string SummariseSource(SourceViewModel vm)
+    {
+        if (vm.HasProblem)
+            return $"{vm.Name}: {vm.Problem}";
+
+        var profileCount = vm.Projects.Sum(p => p.Profiles.Count);
+        var summary = $"{vm.Name}: {vm.Projects.Count} project(s), {profileCount} profile(s).";
+        if (vm.Projects.Count == 0)
+            summary += vm.Kind == SourceKind.Solution
+                ? " No projects with publish profiles found."
+                : " No publish profiles found (looked in Properties/PublishProfiles).";
+        return summary;
+    }
+
+    private void SyncRecent()
+    {
+        RecentSolutions.Clear();
+        foreach (var recent in _settings.RecentSolutions)
+            RecentSolutions.Add(recent);
+    }
+
+    // ---- Selection --------------------------------------------------------
 
     private void OnProjectSelectionChanged()
     {
@@ -189,15 +267,14 @@ public partial class MainWindowViewModel : ObservableObject
         SaveCurrentSelection();
     }
 
-    /// <summary>Re-check the profiles (and restore engines) that were selected last time for this solution.</summary>
-    private void RestoreSelection(string solutionPath)
+    private void RestoreSelection(SourceViewModel source)
     {
-        if (!_settings.SavedSelections.TryGetValue(solutionPath, out var saved) || saved.Count == 0)
+        if (!_settings.SavedSelections.TryGetValue(source.Path, out var saved) || saved.Count == 0)
             return;
 
         foreach (var sel in saved)
         {
-            var profile = Projects
+            var profile = source.Projects
                 .FirstOrDefault(p => p.Name == sel.Project)?
                 .Profiles.FirstOrDefault(pr => pr.Name == sel.Profile);
             if (profile is null)
@@ -208,39 +285,32 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    /// <summary>Persist the current selection (selected profiles + engines) for the open solution.</summary>
     private void SaveCurrentSelection()
     {
-        if (_applyingState || string.IsNullOrEmpty(SolutionPath))
+        if (_applyingState)
             return;
 
-        var selection = Projects
-            .SelectMany(p => p.Profiles)
-            .Where(pr => pr.IsSelected)
-            .Select(pr => new SavedProfileSelection
-            {
-                Project = pr.Parent.Name,
-                Profile = pr.Name,
-                Engine = pr.Engine,
-            })
-            .ToList();
+        foreach (var source in Sources)
+        {
+            var selection = source.Projects
+                .SelectMany(p => p.Profiles)
+                .Where(pr => pr.IsSelected)
+                .Select(pr => new SavedProfileSelection
+                {
+                    Project = pr.Parent.Name,
+                    Profile = pr.Name,
+                    Engine = pr.Engine,
+                })
+                .ToList();
 
-        if (selection.Count == 0)
-            _settings.SavedSelections.Remove(SolutionPath);
-        else
-            _settings.SavedSelections[SolutionPath] = selection;
+            if (selection.Count == 0)
+                _settings.SavedSelections.Remove(source.Path);
+            else
+                _settings.SavedSelections[source.Path] = selection;
+        }
 
         _settingsStore.Save(_settings);
     }
-
-    private void SyncRecent()
-    {
-        RecentSolutions.Clear();
-        foreach (var recent in _settings.RecentSolutions)
-            RecentSolutions.Add(recent);
-    }
-
-    // ---- Selection helpers ------------------------------------------------
 
     [RelayCommand]
     private void SelectAll() => SetAllSelected(true);
@@ -251,9 +321,8 @@ public partial class MainWindowViewModel : ObservableObject
     private void SetAllSelected(bool value)
     {
         _applyingState = true;
-        foreach (var project in Projects)
-            foreach (var profile in project.Profiles)
-                profile.IsSelected = value;
+        foreach (var profile in Sources.SelectMany(s => s.Projects).SelectMany(p => p.Profiles))
+            profile.IsSelected = value;
         _applyingState = false;
 
         OnPropertyChanged(nameof(SelectedCount));
@@ -267,7 +336,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanDeploy))]
     private async Task DeployAsync()
     {
-        var selected = Projects
+        var selected = Sources
+            .SelectMany(s => s.Projects)
             .SelectMany(p => p.Profiles)
             .Where(pr => pr.IsSelected)
             .ToList();
@@ -278,7 +348,6 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // Pre-flight: make sure every chosen engine is actually available here.
         foreach (var engineKind in selected.Select(s => s.Engine).Distinct())
         {
             if (!_engineFactory.Get(engineKind).IsAvailable(out var reason))
@@ -309,11 +378,9 @@ public partial class MainWindowViewModel : ObservableObject
             profileVm.Status = PublishStatus.Pending;
             profileVm.ResultText = string.Empty;
 
-            // Remember (non-secret) usernames for next time.
             if (!string.IsNullOrWhiteSpace(profileVm.UserName))
                 _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
 
-            // Remember passwords only on opt-in, and only in the OS secure store — never in settings.json.
             PersistPassword(profileVm);
         }
 
@@ -407,14 +474,25 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ---- Startup ----------------------------------------------------------
 
-    /// <summary>Reopens the last solution (and its saved selections) when enabled.</summary>
+    /// <summary>Reloads the persisted sources (and their saved selections) when enabled.</summary>
     public async Task RunStartupLoadAsync()
     {
-        if (AutoLoadLastSolution &&
-            !string.IsNullOrEmpty(_settings.LastSolutionPath) &&
-            File.Exists(_settings.LastSolutionPath))
+        if (!RestoreSourcesOnStartup || _settings.Sources.Count == 0)
+            return;
+
+        IsLoading = true;
+        try
         {
-            await LoadSolutionAsync(_settings.LastSolutionPath);
+            foreach (var source in _settings.Sources.ToList())
+                Sources.Add(await BuildSourceAsync(source));
+
+            StatusMessage = $"Restored {Sources.Count} source(s).";
+        }
+        finally
+        {
+            IsLoading = false;
+            OnPropertyChanged(nameof(SelectedCount));
+            OnPropertyChanged(nameof(HasSources));
         }
     }
 

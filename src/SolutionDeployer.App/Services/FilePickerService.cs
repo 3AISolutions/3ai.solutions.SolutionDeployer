@@ -3,10 +3,18 @@ using Avalonia.Platform.Storage;
 
 namespace SolutionDeployer.App.Services;
 
-/// <summary>Avalonia <see cref="IStorageProvider"/>-backed open-file dialog for solution files.</summary>
+/// <summary>Avalonia <see cref="IStorageProvider"/>-backed open-file dialogs for solutions and projects.</summary>
 public sealed class FilePickerService(IClassicDesktopStyleApplicationLifetime lifetime) : IFilePickerService
 {
-    public async Task<string?> PickSolutionAsync()
+    public Task<string?> PickSolutionAsync() => PickAsync(
+        "Select a .NET solution",
+        new FilePickerFileType("Solution files") { Patterns = ["*.sln", "*.slnx"] });
+
+    public Task<string?> PickProjectAsync() => PickAsync(
+        "Select a project",
+        new FilePickerFileType("Project files") { Patterns = ["*.csproj", "*.fsproj", "*.vbproj"] });
+
+    private async Task<string?> PickAsync(string title, FilePickerFileType filter)
     {
         var window = lifetime.MainWindow;
         if (window is null)
@@ -14,19 +22,11 @@ public sealed class FilePickerService(IClassicDesktopStyleApplicationLifetime li
 
         var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Select a .NET solution",
+            Title = title,
             AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("Solution files")
-                {
-                    Patterns = ["*.sln", "*.slnx"],
-                },
-                FilePickerFileTypes.All,
-            ],
+            FileTypeFilter = [filter, FilePickerFileTypes.All],
         });
 
-        var file = files.Count > 0 ? files[0] : null;
-        return file?.TryGetLocalPath();
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 }
