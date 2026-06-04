@@ -10,7 +10,13 @@
     <Company>3ai.solutions</Company>
     <AssemblyName>SolutionDeployer.App</AssemblyName>
     <Version>0.3.0</Version>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded for the runtime window icon (cross-platform). -->
+    <AvaloniaResource Include="Assets\app-icon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.4" />
