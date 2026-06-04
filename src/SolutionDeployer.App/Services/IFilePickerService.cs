@@ -6,4 +6,7 @@ public interface IFilePickerService
     Task<string?> PickSolutionAsync();
 
     Task<string?> PickProjectAsync();
+
+    /// <summary>Picks a deployment script, opening at <paramref name="startDirectory"/> when given.</summary>
+    Task<string?> PickScriptAsync(string? startDirectory = null);
 }

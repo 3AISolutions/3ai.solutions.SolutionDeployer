@@ -24,6 +24,7 @@ public partial class App : Application
             services.AddSolutionDeployerCore();
             services.AddSingleton<IClassicDesktopStyleApplicationLifetime>(desktop);
             services.AddSingleton<IFilePickerService, FilePickerService>();
+            services.AddSingleton<IScriptEditorService, ScriptEditorService>();
             services.AddSingleton<UpdateService>();
             services.AddSingleton<MainWindowViewModel>();
 

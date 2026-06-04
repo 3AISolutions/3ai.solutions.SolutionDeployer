@@ -7,7 +7,7 @@ namespace SolutionDeployer.App.ViewModels;
 /// A selectable publish profile. Carries its own engine choice and (non-persisted) credentials so
 /// that any combination of profiles can be queued with per-target settings.
 /// </summary>
-public partial class ProfileViewModel : ObservableObject
+public partial class ProfileViewModel : ObservableObject, ISelectableTarget
 {
     public ProfileViewModel(
         ProjectViewModel parent,

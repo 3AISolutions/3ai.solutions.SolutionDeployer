@@ -19,6 +19,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IFilePickerService _filePicker;
     private readonly UpdateService _updateService;
     private readonly ICredentialStore _credentialStore;
+    private readonly IScriptEditorService _scriptEditor;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -32,7 +33,8 @@ public partial class MainWindowViewModel : ObservableObject
         SettingsStore settingsStore,
         IFilePickerService filePicker,
         UpdateService updateService,
-        ICredentialStore credentialStore)
+        ICredentialStore credentialStore,
+        IScriptEditorService scriptEditor)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -41,6 +43,7 @@ public partial class MainWindowViewModel : ObservableObject
         _filePicker = filePicker;
         _updateService = updateService;
         _credentialStore = credentialStore;
+        _scriptEditor = scriptEditor;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -96,7 +99,8 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public int SelectedCount =>
-        Sources.SelectMany(s => s.Projects).Sum(p => p.Profiles.Count(pr => pr.IsSelected));
+        Sources.SelectMany(s => s.Projects)
+            .Sum(p => p.Profiles.Count(pr => pr.IsSelected) + p.ScriptTargets.Count(st => st.IsSelected));
 
     public bool HasSources => Sources.Count > 0;
 
@@ -176,6 +180,62 @@ public partial class MainWindowViewModel : ObservableObject
         StatusMessage = $"Removed {source.Name}.";
     }
 
+    // ---- Script targets ---------------------------------------------------
+
+    [RelayCommand]
+    private async Task AddScriptAsync(ProjectViewModel? project)
+    {
+        if (project is null)
+            return;
+
+        var draft = new ScriptTarget();
+        var result = await _scriptEditor.EditAsync(draft, project.ProjectDirectory, isNew: true);
+        if (result is null)
+            return;
+
+        project.ScriptTargets.Add(new ScriptTargetViewModel(project, result));
+        project.NotifyScriptsChanged();
+        PersistScriptTargets(project);
+        OnPropertyChanged(nameof(SelectedCount));
+        StatusMessage = $"Added script '{result.Name}' to {project.Name}.";
+    }
+
+    [RelayCommand]
+    private async Task EditScriptAsync(ScriptTargetViewModel? script)
+    {
+        if (script is null)
+            return;
+
+        var result = await _scriptEditor.EditAsync(script.Target, script.Parent.ProjectDirectory, isNew: false);
+        if (result is null)
+            return;
+
+        script.Update(result);
+        PersistScriptTargets(script.Parent);
+        StatusMessage = $"Updated script '{result.Name}'.";
+    }
+
+    [RelayCommand]
+    private void RemoveScript(ScriptTargetViewModel? script)
+    {
+        if (script is null)
+            return;
+
+        var project = script.Parent;
+        project.ScriptTargets.Remove(script);
+        project.NotifyScriptsChanged();
+        PersistScriptTargets(project);
+        OnPropertyChanged(nameof(SelectedCount));
+        SaveCurrentSelection();
+        StatusMessage = $"Removed script '{script.Name}'.";
+    }
+
+    private void PersistScriptTargets(ProjectViewModel project)
+    {
+        _settings.SetScriptTargets(project.ProjectPath, project.ScriptTargets.Select(s => s.Target));
+        _settingsStore.Save(_settings);
+    }
+
     [RelayCommand]
     private async Task RefreshAllAsync()
     {
@@ -225,6 +285,10 @@ public partial class MainWindowViewModel : ObservableObject
                     projectVm.Profiles.Add(new ProfileViewModel(
                         projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable));
                 }
+
+                foreach (var script in _settings.GetScriptTargets(project.ProjectPath))
+                    projectVm.ScriptTargets.Add(new ScriptTargetViewModel(projectVm, script));
+
                 vm.Projects.Add(projectVm);
             }
 
@@ -274,14 +338,25 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var sel in saved)
         {
-            var profile = source.Projects
-                .FirstOrDefault(p => p.Name == sel.Project)?
-                .Profiles.FirstOrDefault(pr => pr.Name == sel.Profile);
-            if (profile is null)
+            var project = source.Projects.FirstOrDefault(p => p.Name == sel.Project);
+            if (project is null)
                 continue;
 
-            profile.Engine = sel.Engine;
-            profile.IsSelected = true;
+            if (sel.Kind == SelectionKind.Script)
+            {
+                var script = project.ScriptTargets.FirstOrDefault(s => s.Target.Id == sel.ScriptId);
+                if (script is not null)
+                    script.IsSelected = true;
+            }
+            else
+            {
+                var profile = project.Profiles.FirstOrDefault(pr => pr.Name == sel.Profile);
+                if (profile is not null)
+                {
+                    profile.Engine = sel.Engine;
+                    profile.IsSelected = true;
+                }
+            }
         }
     }
 
@@ -292,16 +367,29 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var source in Sources)
         {
-            var selection = source.Projects
-                .SelectMany(p => p.Profiles)
-                .Where(pr => pr.IsSelected)
-                .Select(pr => new SavedProfileSelection
-                {
-                    Project = pr.Parent.Name,
-                    Profile = pr.Name,
-                    Engine = pr.Engine,
-                })
-                .ToList();
+            var selection = new List<SavedProfileSelection>();
+
+            foreach (var project in source.Projects)
+            {
+                selection.AddRange(project.Profiles
+                    .Where(pr => pr.IsSelected)
+                    .Select(pr => new SavedProfileSelection
+                    {
+                        Kind = SelectionKind.Profile,
+                        Project = project.Name,
+                        Profile = pr.Name,
+                        Engine = pr.Engine,
+                    }));
+
+                selection.AddRange(project.ScriptTargets
+                    .Where(st => st.IsSelected)
+                    .Select(st => new SavedProfileSelection
+                    {
+                        Kind = SelectionKind.Script,
+                        Project = project.Name,
+                        ScriptId = st.Target.Id,
+                    }));
+            }
 
             if (selection.Count == 0)
                 _settings.SavedSelections.Remove(source.Path);
@@ -321,8 +409,13 @@ public partial class MainWindowViewModel : ObservableObject
     private void SetAllSelected(bool value)
     {
         _applyingState = true;
-        foreach (var profile in Sources.SelectMany(s => s.Projects).SelectMany(p => p.Profiles))
-            profile.IsSelected = value;
+        foreach (var project in Sources.SelectMany(s => s.Projects))
+        {
+            foreach (var profile in project.Profiles)
+                profile.IsSelected = value;
+            foreach (var script in project.ScriptTargets)
+                script.IsSelected = value;
+        }
         _applyingState = false;
 
         OnPropertyChanged(nameof(SelectedCount));
@@ -336,19 +429,20 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanDeploy))]
     private async Task DeployAsync()
     {
-        var selected = Sources
-            .SelectMany(s => s.Projects)
-            .SelectMany(p => p.Profiles)
-            .Where(pr => pr.IsSelected)
-            .ToList();
+        var projects = Sources.SelectMany(s => s.Projects).ToList();
+        var selectedProfiles = projects.SelectMany(p => p.Profiles).Where(pr => pr.IsSelected).ToList();
+        var selectedScripts = projects.SelectMany(p => p.ScriptTargets).Where(st => st.IsSelected).ToList();
 
-        if (selected.Count == 0)
+        if (selectedProfiles.Count + selectedScripts.Count == 0)
         {
-            StatusMessage = "Select at least one profile to deploy.";
+            StatusMessage = "Select at least one target to deploy.";
             return;
         }
 
-        foreach (var engineKind in selected.Select(s => s.Engine).Distinct())
+        var engineKinds = selectedProfiles.Select(p => p.Engine);
+        if (selectedScripts.Count > 0)
+            engineKinds = engineKinds.Append(PublishEngineKind.Script);
+        foreach (var engineKind in engineKinds.Distinct())
         {
             if (!_engineFactory.Get(engineKind).IsAvailable(out var reason))
             {
@@ -358,9 +452,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
-        var jobsByProfile = new Dictionary<string, ProfileViewModel>();
+        var jobsByTarget = new Dictionary<string, ISelectableTarget>();
         var jobs = new List<PublishJob>();
-        foreach (var profileVm in selected)
+
+        foreach (var profileVm in selectedProfiles)
         {
             var job = new PublishJob
             {
@@ -373,7 +468,7 @@ public partial class MainWindowViewModel : ObservableObject
                 Credentials = profileVm.BuildCredentials(),
             };
             jobs.Add(job);
-            jobsByProfile[job.Id] = profileVm;
+            jobsByTarget[job.Id] = profileVm;
 
             profileVm.Status = PublishStatus.Pending;
             profileVm.ResultText = string.Empty;
@@ -382,6 +477,22 @@ public partial class MainWindowViewModel : ObservableObject
                 _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
 
             PersistPassword(profileVm);
+        }
+
+        foreach (var scriptVm in selectedScripts)
+        {
+            var job = new PublishJob
+            {
+                Project = scriptVm.Parent.Project,
+                Script = scriptVm.Target,
+                Engine = PublishEngineKind.Script,
+                Configuration = "Release",
+            };
+            jobs.Add(job);
+            jobsByTarget[job.Id] = scriptVm;
+
+            scriptVm.Status = PublishStatus.Pending;
+            scriptVm.ResultText = string.Empty;
         }
 
         _settingsStore.Save(_settings);
@@ -394,7 +505,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         void OnOutput(JobOutput output) => Dispatcher.UIThread.Post(() =>
         {
-            if (startedJobs.Add(output.JobId) && jobsByProfile.TryGetValue(output.JobId, out var vmStart))
+            if (startedJobs.Add(output.JobId) && jobsByTarget.TryGetValue(output.JobId, out var vmStart))
                 vmStart.Status = PublishStatus.Running;
 
             AppendLog(LogLine.From(output.JobDisplayName, output.Line));
@@ -402,7 +513,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         void OnJobCompleted(PublishResult result) => Dispatcher.UIThread.Post(() =>
         {
-            if (jobsByProfile.TryGetValue(result.JobId, out var vm))
+            if (jobsByTarget.TryGetValue(result.JobId, out var vm))
             {
                 vm.Status = result.Status;
                 vm.ResultText = result.IsSuccess

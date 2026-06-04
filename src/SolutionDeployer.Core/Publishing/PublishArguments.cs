@@ -18,7 +18,7 @@ internal static class PublishArguments
     {
         var props = new List<(string Key, string Value, bool Secret)>
         {
-            ("PublishProfile", ProfileArgument(job.Profile), false),
+            ("PublishProfile", ProfileArgument(job.Profile!), false),
         };
 
         if (!string.IsNullOrEmpty(job.Credentials.UserName))

@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.ScriptEditorWindow"
+        x:DataType="vm:ScriptEditorViewModel"
+        Title="{Binding Title}"
+        Width="620" Height="540" MinWidth="520" MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+        <!-- Buttons -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+            <TextBlock Grid.Column="0" Text="{Binding Error}" Foreground="#E05561" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Save" Command="{Binding SaveCommand}" Classes="accent" />
+        </Grid>
+
+        <ScrollViewer>
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Name" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding Name}" PlaceholderText="e.g. Deploy to prod" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Script file" FontWeight="SemiBold" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding ScriptPath}" PlaceholderText=".ps1 / .sh / .bash / .cmd / .bat" />
+                        <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseCommand}" Margin="6,0,0,0" />
+                    </Grid>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Arguments" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding Arguments}" PlaceholderText="-Server host -ServiceName app.service" />
+                    <TextBlock Text="Passed to the script. PowerShell named params bind directly; shells receive them positionally."
+                               FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Working directory" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding WorkingDirectory}" PlaceholderText="(defaults to the project directory)" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Environment variables" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Add" Command="{Binding AddEnvVarCommand}" />
+                    </Grid>
+                    <TextBlock Text="SD_PROJECT_PATH, SD_PROJECT_DIR, SD_PROJECT_NAME and SD_CONFIGURATION are always provided."
+                               FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding EnvVars}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:EnvVarRow">
+                                <Grid ColumnDefinitions="*,*,Auto" Margin="0,2">
+                                    <TextBox Grid.Column="0" Text="{Binding Key}" PlaceholderText="KEY" Margin="0,0,4,0" />
+                                    <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="value" Margin="0,0,4,0" />
+                                    <Button Grid.Column="2" Content="✕"
+                                            Command="{Binding $parent[Window].((vm:ScriptEditorViewModel)DataContext).RemoveEnvVarCommand}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

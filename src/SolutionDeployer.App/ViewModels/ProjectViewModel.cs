@@ -5,8 +5,8 @@ using SolutionDeployer.Core.Models;
 namespace SolutionDeployer.App.ViewModels;
 
 /// <summary>
-/// A project node in the tree, owning its publish profiles. Tracks an aggregate selection state so
-/// the header checkbox shows checked / unchecked / indeterminate.
+/// A project node in the tree, owning its publish profiles and script targets. Tracks an aggregate
+/// selection state so the header checkbox shows checked / unchecked / indeterminate.
 /// </summary>
 public partial class ProjectViewModel : ObservableObject
 {
@@ -16,6 +16,7 @@ public partial class ProjectViewModel : ObservableObject
     {
         Project = project;
         Profiles = new ObservableCollection<ProfileViewModel>();
+        ScriptTargets = new ObservableCollection<ScriptTargetViewModel>();
     }
 
     public DeploymentProject Project { get; }
@@ -24,15 +25,32 @@ public partial class ProjectViewModel : ObservableObject
 
     public string ProjectPath => Project.ProjectPath;
 
-    public bool HasProfiles => Profiles.Count > 0;
+    public string ProjectDirectory => Project.ProjectDirectory;
 
     public ObservableCollection<ProfileViewModel> Profiles { get; }
 
-    /// <summary>Raised whenever a child profile's selection or engine changes.</summary>
+    public ObservableCollection<ScriptTargetViewModel> ScriptTargets { get; }
+
+    /// <summary>True when the project has at least one selectable target (profile or script).</summary>
+    public bool HasTargets => Profiles.Count > 0 || ScriptTargets.Count > 0;
+
+    public bool HasScripts => ScriptTargets.Count > 0;
+
+    private IEnumerable<ISelectableTarget> SelectableTargets =>
+        Profiles.Cast<ISelectableTarget>().Concat(ScriptTargets);
+
+    /// <summary>Raised whenever a child target's selection or engine changes.</summary>
     public event Action? SelectionChanged;
 
     /// <summary>Notify listeners of a state change (e.g. a child engine choice) without recomputing tri-state.</summary>
     public void RaiseStateChanged() => SelectionChanged?.Invoke();
+
+    public void NotifyScriptsChanged()
+    {
+        OnPropertyChanged(nameof(HasScripts));
+        OnPropertyChanged(nameof(HasTargets));
+        RefreshSelectionState();
+    }
 
     [ObservableProperty]
     private bool _isExpanded = true;
@@ -46,20 +64,24 @@ public partial class ProjectViewModel : ObservableObject
         if (_suppressCascade || value is null)
             return;
 
-        foreach (var profile in Profiles)
-            profile.IsSelected = value.Value;
+        foreach (var target in SelectableTargets)
+            target.IsSelected = value.Value;
     }
 
     /// <summary>Recomputes the header state from the children (called by child checkboxes).</summary>
     public void RefreshSelectionState()
     {
-        if (Profiles.Count == 0)
+        var targets = SelectableTargets.ToList();
+        if (targets.Count == 0)
+        {
+            SelectionChanged?.Invoke();
             return;
+        }
 
-        var selectedCount = Profiles.Count(p => p.IsSelected);
+        var selectedCount = targets.Count(t => t.IsSelected);
         _suppressCascade = true;
         IsSelected = selectedCount == 0 ? false
-            : selectedCount == Profiles.Count ? true
+            : selectedCount == targets.Count ? true
             : null;
         _suppressCascade = false;
         SelectionChanged?.Invoke();

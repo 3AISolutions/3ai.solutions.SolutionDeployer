@@ -1,14 +1,19 @@
 namespace SolutionDeployer.Core.Models;
 
 /// <summary>
-/// A fully-specified unit of deployment work: publish one project with one profile using one engine.
-/// A "deploy all selected" run is just a list of these.
+/// A fully-specified unit of deployment work for one project: either a profile publish
+/// (<see cref="Profile"/> + dotnet/msbuild engine) or a script run (<see cref="Script"/> + the Script
+/// engine). A "deploy all selected" run is just a list of these.
 /// </summary>
 public sealed class PublishJob
 {
     public required DeploymentProject Project { get; init; }
 
-    public required PublishProfile Profile { get; init; }
+    /// <summary>The publish profile, for the dotnet/msbuild engines. Null for a script job.</summary>
+    public PublishProfile? Profile { get; init; }
+
+    /// <summary>The script to run, for the <see cref="PublishEngineKind.Script"/> engine. Null otherwise.</summary>
+    public ScriptTarget? Script { get; init; }
 
     public required PublishEngineKind Engine { get; init; }
 
@@ -27,5 +32,5 @@ public sealed class PublishJob
     /// <summary>Stable identifier for correlating output lines with a job in the UI.</summary>
     public string Id { get; } = Guid.NewGuid().ToString("N");
 
-    public string DisplayName => $"{Project.Name} → {Profile.Name}";
+    public string DisplayName => $"{Project.Name} → {Profile?.Name ?? Script?.Name ?? "?"}";
 }

@@ -32,10 +32,28 @@ public sealed class AppSettings
     public bool RestoreSourcesOnStartup { get; set; } = true;
 
     /// <summary>
-    /// Remembered profile selections, keyed by source path (solution or project). Lets the same
+    /// Remembered target selections, keyed by source path (solution or project). Lets the same
     /// targets be re-checked when a source is reloaded.
     /// </summary>
     public Dictionary<string, List<SavedProfileSelection>> SavedSelections { get; set; } = new();
+
+    /// <summary>
+    /// User-defined script deployment targets, keyed by project file path (so they appear whether the
+    /// project is added directly or via a solution).
+    /// </summary>
+    public Dictionary<string, List<ScriptTarget>> ScriptTargets { get; set; } = new();
+
+    public IReadOnlyList<ScriptTarget> GetScriptTargets(string projectPath) =>
+        ScriptTargets.TryGetValue(projectPath, out var list) ? list : [];
+
+    public void SetScriptTargets(string projectPath, IEnumerable<ScriptTarget> targets)
+    {
+        var list = targets.ToList();
+        if (list.Count == 0)
+            ScriptTargets.Remove(projectPath);
+        else
+            ScriptTargets[projectPath] = list;
+    }
 
     // --- Legacy (pre-source-list) fields, kept for one-time migration only. ---
 
