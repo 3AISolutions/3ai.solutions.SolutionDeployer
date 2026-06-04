@@ -14,9 +14,11 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     its projects; solutions are filtered to projects that have ≥1 profile, `Projects/ProjectLoader`
     loads a single project unfiltered.
   - `Profiles/ProfileDiscovery` scans `Properties/PublishProfiles` for `.pubxml` / `.PublishSettings`.
-  - `Publishing/` — `IPublishEngine` with `DotnetPublishEngine` and `MsBuildPublishEngine`
-    (the latter locates `msbuild.exe` via `MsBuildLocator`/vswhere, Windows only). `ProcessRunner`
-    streams output; `DeploymentRunner` runs a batch of `PublishJob`s (sequential or parallel).
+  - `Publishing/` — `IPublishEngine` with `DotnetPublishEngine`, `MsBuildPublishEngine`
+    (the latter locates `msbuild.exe` via `MsBuildLocator`/vswhere, Windows only) and
+    `ScriptPublishEngine` (runs a `ScriptTarget`: interpreter inferred by `ScriptInterpreters`, args
+    split by `CommandLine`, `SD_*` context env). `ProcessRunner` streams output; `DeploymentRunner`
+    runs a batch of `PublishJob`s (each a profile **or** a script; sequential or parallel).
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**
 - **`src/SolutionDeployer.App`** — Avalonia MVVM (CommunityToolkit.Mvvm). DI is wired in
   `App.axaml.cs`. `Services/UpdateService` wraps Velopack. `Program.cs` calls `VelopackApp.Build().Run()`

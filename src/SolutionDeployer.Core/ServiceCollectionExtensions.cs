@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<MsBuildLocator>();
         services.AddSingleton<IPublishEngine, DotnetPublishEngine>();
         services.AddSingleton<IPublishEngine, MsBuildPublishEngine>();
+        services.AddSingleton<IPublishEngine, ScriptPublishEngine>();
         services.AddSingleton<IPublishEngineFactory, PublishEngineFactory>();
         services.AddSingleton<DeploymentRunner>();
 

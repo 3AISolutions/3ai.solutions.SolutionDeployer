@@ -21,6 +21,10 @@ sequentially or in parallel — with live build output. Self-updates from GitHub
   - `dotnet publish` — cross-platform, uses the .NET SDK.
   - `msbuild.exe /t:Publish` — Windows-only (located via vswhere), for classic Web Deploy /
     full-framework targets.
+- **Script deployments** — attach custom `.ps1`/`.sh`/`.bash`/`.cmd`/`.bat` scripts to a project as
+  standalone targets (e.g. publish → `scp` → restart a service). The interpreter is inferred from the
+  extension; scripts receive their configured arguments plus `SD_PROJECT_PATH` / `SD_PROJECT_DIR` /
+  `SD_PROJECT_NAME` / `SD_CONFIGURATION` context, and run in the same selectable batch as profiles.
 - **Per-target credentials** (username/password) for MSDeploy publishes. Passwords are never written
   to disk and are redacted from the logged command line; usernames can be remembered.
 - **Live output console** with per-job tagging and error highlighting; cancel mid-run.
