@@ -17,6 +17,14 @@ public partial class ProjectViewModel : ObservableObject
         Project = project;
         Profiles = new ObservableCollection<ProfileViewModel>();
         ScriptTargets = new ObservableCollection<ScriptTargetViewModel>();
+
+        // Keep the "has scripts/targets" visibility in sync with the collections however they change.
+        ScriptTargets.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasScripts));
+            OnPropertyChanged(nameof(HasTargets));
+        };
+        Profiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTargets));
     }
 
     public DeploymentProject Project { get; }
