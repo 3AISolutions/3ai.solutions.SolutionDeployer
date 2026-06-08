@@ -35,6 +35,10 @@ jobs:
             rid: linux-x64
             exe: SolutionDeployer.App
             icon: src/SolutionDeployer.App/Assets/app-icon.png
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            exe: SolutionDeployer.App
+            icon: src/SolutionDeployer.App/Assets/app-icon.png
           - os: macos-latest
             rid: osx-arm64
             exe: SolutionDeployer.App
