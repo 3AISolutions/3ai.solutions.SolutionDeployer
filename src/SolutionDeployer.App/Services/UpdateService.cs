@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Velopack;
 using Velopack.Sources;
 
@@ -54,6 +55,18 @@ public sealed class UpdateService
         var url = repository.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? repository
             : $"https://github.com/{repository.Trim('/')}";
-        return new UpdateManager(new GithubSource(url, null, false));
+
+        // win/osx/linux-x64 ship on Velopack's default channel; linux-arm64 has its own channel
+        // (the two linux arches can't share one feed). Match the channel to the running build.
+        var options = GetExplicitChannel() is { } channel
+            ? new UpdateOptions { ExplicitChannel = channel }
+            : null;
+
+        return new UpdateManager(new GithubSource(url, null, false), options);
     }
+
+    private static string? GetExplicitChannel() =>
+        OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? "linux-arm64"
+            : null;
 }

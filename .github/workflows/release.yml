@@ -39,6 +39,10 @@ jobs:
             rid: linux-arm64
             exe: SolutionDeployer.App
             icon: src/SolutionDeployer.App/Assets/app-icon.png
+            # The two linux arches can't share Velopack's default 'linux' channel/feed,
+            # so arm64 gets its own. win/osx/linux-x64 keep the default to preserve
+            # existing installs' update path.
+            channel: linux-arm64
           - os: macos-latest
             rid: osx-arm64
             exe: SolutionDeployer.App
@@ -68,6 +72,8 @@ jobs:
 
       - name: Pack with Velopack
         shell: bash
+        env:
+          CHANNEL: ${{ matrix.channel }}
         run: |
           vpk pack \
             --packId "$PACK_ID" \
@@ -75,10 +81,13 @@ jobs:
             --packDir publish \
             --mainExe "${{ matrix.exe }}" \
             --packTitle "3ai Solution Deployer" \
-            --icon "${{ matrix.icon }}"
+            --icon "${{ matrix.icon }}" \
+            ${CHANNEL:+--channel "$CHANNEL"}
 
       - name: Upload release assets
         shell: bash
+        env:
+          CHANNEL: ${{ matrix.channel }}
         run: |
           vpk upload github \
             --repoUrl "https://github.com/${{ github.repository }}" \
@@ -86,4 +95,5 @@ jobs:
             --tag "${{ github.ref_name }}" \
             --releaseName "3ai Solution Deployer ${{ env.VERSION }}" \
             --merge \
-            --publish
+            --publish \
+            ${CHANNEL:+--channel "$CHANNEL"}
