@@ -98,6 +98,16 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
+    /// <summary>Current app version, shown in the toolbar (e.g. "v0.5.0").</summary>
+    public string AppVersion
+    {
+        get
+        {
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return v is null ? string.Empty : $"v{v.Major}.{v.Minor}.{v.Build}";
+        }
+    }
+
     public int SelectedCount =>
         Sources.SelectMany(s => s.Projects)
             .Sum(p => p.Profiles.Count(pr => pr.IsSelected) + p.ScriptTargets.Count(st => st.IsSelected));
