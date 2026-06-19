@@ -71,8 +71,10 @@ public sealed class BackupService : IBackupService
 
         var folder = EnsureProfileFolder(profile);
         var createdUtc = DateTimeOffset.UtcNow;
+        var sequence = NextSequence(folder);
         var id = Guid.NewGuid().ToString("N");
-        var packagePath = Path.Combine(folder, $"{createdUtc:yyyyMMdd-HHmmss}_{id[..8]}.zip");
+        // Sequence keeps the file name unique even for several snapshots within the same second.
+        var packagePath = Path.Combine(folder, $"{createdUtc:yyyyMMdd-HHmmss}_{sequence:D6}_{id[..8]}.zip");
 
         onOutput(OutputLine.Info($"[backup] Capturing current deployment of '{profile.Name}' …"));
 
@@ -109,6 +111,7 @@ public sealed class BackupService : IBackupService
             ProjectName = job.Project.Name,
             Kind = target is MsDeployTarget ? BackupKind.MsDeploy : BackupKind.FileSystem,
             CreatedUtc = createdUtc,
+            Sequence = sequence,
             PackagePath = packagePath,
             SizeBytes = new FileInfo(packagePath).Length,
             Target = target.DisplayTarget,
@@ -126,16 +129,20 @@ public sealed class BackupService : IBackupService
         if (!Directory.Exists(folder))
             return [];
 
-        var backups = new List<DeploymentBackup>();
-        foreach (var manifest in Directory.EnumerateFiles(folder, "*.json"))
-        {
-            var backup = ReadManifest(manifest);
-            if (backup is not null && File.Exists(backup.PackagePath))
-                backups.Add(backup);
-        }
-
-        return backups.OrderByDescending(b => b.CreatedUtc).ToList();
+        return ReadAll(folder).Where(b => File.Exists(b.PackagePath)).ToList();
     }
+
+    /// <summary>All snapshots in a folder, newest first. Ordering is total and stable: by sequence,
+    /// then timestamp, then id — so same-second snapshots never sort arbitrarily.</summary>
+    private static List<DeploymentBackup> ReadAll(string folder) =>
+        Directory.EnumerateFiles(folder, "*.json")
+            .Select(ReadManifest)
+            .Where(b => b is not null)
+            .Select(b => b!)
+            .OrderByDescending(b => b.Sequence)
+            .ThenByDescending(b => b.CreatedUtc)
+            .ThenBy(b => b.Id, StringComparer.Ordinal)
+            .ToList();
 
     public async Task RestoreAsync(
         DeploymentBackup backup,
@@ -432,18 +439,24 @@ public sealed class BackupService : IBackupService
 
     private void Prune(string folder, Action<OutputLine> onOutput)
     {
-        var manifests = Directory.EnumerateFiles(folder, "*.json")
-            .Select(ReadManifest)
-            .Where(b => b is not null)
-            .Select(b => b!)
-            .OrderByDescending(b => b.CreatedUtc)
-            .ToList();
-
-        foreach (var stale in manifests.Skip(_retention))
+        foreach (var stale in ReadAll(folder).Skip(_retention))
         {
             Delete(stale);
             onOutput(OutputLine.Info($"[backup] Pruned old snapshot from {stale.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}."));
         }
+    }
+
+    /// <summary>Next monotonic sequence for a profile folder: one more than the highest seen so far
+    /// (pruning never lowers it, so sequences stay strictly increasing across the profile's lifetime).</summary>
+    private static long NextSequence(string folder)
+    {
+        var manifests = Directory.EnumerateFiles(folder, "*.json")
+            .Select(ReadManifest)
+            .Where(b => b is not null)
+            .Select(b => b!.Sequence)
+            .DefaultIfEmpty(0)
+            .Max();
+        return manifests + 1;
     }
 
     private static void TryDeleteFile(string path)

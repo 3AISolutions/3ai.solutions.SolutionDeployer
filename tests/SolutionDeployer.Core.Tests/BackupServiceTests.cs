@@ -133,6 +133,44 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_uses_the_selected_snapshot_even_when_taken_in_the_same_second()
+    {
+        // Ample retention so none of the three snapshots get pruned.
+        var service = new BackupService(new ProcessRunner(), new MsDeployLocator(),
+            Path.Combine(_tempDir, "Backups2"), retention: 10);
+        var dest = Path.Combine(_tempDir, "dest");
+        Directory.CreateDirectory(dest);
+        var profile = FileSystemProfile(dest);
+        var job = JobFor(profile);
+
+        // Three deployments back to back, each backed up before the next overwrites it.
+        await File.WriteAllTextAsync(Path.Combine(dest, "v.txt"), "one");
+        var b1 = await service.BackUpAsync(job, _ => { });
+        await File.WriteAllTextAsync(Path.Combine(dest, "v.txt"), "two");
+        var b2 = await service.BackUpAsync(job, _ => { });
+        await File.WriteAllTextAsync(Path.Combine(dest, "v.txt"), "three");
+        var b3 = await service.BackUpAsync(job, _ => { });
+
+        Assert.NotNull(b1);
+        Assert.NotNull(b2);
+        Assert.NotNull(b3);
+
+        // Sequences are monotonic and distinct, and List orders newest-first deterministically.
+        Assert.Equal([b3!.Sequence, b2!.Sequence, b1!.Sequence], service.List(profile, _tempDir).Select(b => b.Sequence));
+        Assert.True(b1.Sequence < b2.Sequence && b2.Sequence < b3.Sequence);
+
+        // Restoring a specific snapshot restores exactly that snapshot's content.
+        await service.RestoreAsync(b2, profile, _tempDir, PublishCredentials.None, true, _ => { });
+        Assert.Equal("two", await File.ReadAllTextAsync(Path.Combine(dest, "v.txt")));
+
+        await service.RestoreAsync(b1, profile, _tempDir, PublishCredentials.None, true, _ => { });
+        Assert.Equal("one", await File.ReadAllTextAsync(Path.Combine(dest, "v.txt")));
+
+        await service.RestoreAsync(b3, profile, _tempDir, PublishCredentials.None, true, _ => { });
+        Assert.Equal("three", await File.ReadAllTextAsync(Path.Combine(dest, "v.txt")));
+    }
+
+    [Fact]
     public async Task Delete_removes_snapshot()
     {
         var dest = Path.Combine(_tempDir, "dest");
