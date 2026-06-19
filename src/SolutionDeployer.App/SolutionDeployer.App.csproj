@@ -9,7 +9,7 @@
     <Product>3ai Solution Deployer</Product>
     <Company>3ai.solutions</Company>
     <AssemblyName>SolutionDeployer.App</AssemblyName>
-    <Version>0.7.0</Version>
+    <Version>0.7.1</Version>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
