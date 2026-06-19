@@ -32,6 +32,13 @@ public sealed class DeploymentBackup
 
     public required DateTimeOffset CreatedUtc { get; init; }
 
+    /// <summary>
+    /// Monotonic per-profile sequence number (1, 2, 3 …). Used for ordering and display so that
+    /// snapshots taken within the same clock-second stay distinct and correctly ordered — the
+    /// timestamp alone is not unique enough to sort or prune by.
+    /// </summary>
+    public long Sequence { get; init; }
+
     /// <summary>Absolute path to the snapshot zip on disk.</summary>
     public required string PackagePath { get; init; }
 
@@ -49,7 +56,7 @@ public sealed class DeploymentBackup
         _ => $"{SizeBytes} B",
     };
 
-    /// <summary>e.g. "2026-06-19 14:05:31 · 12.4 MB".</summary>
+    /// <summary>e.g. "#3 · 2026-06-19 14:05:31 · 12.4 MB". The leading #N keeps same-second snapshots distinct.</summary>
     [JsonIgnore]
-    public string DisplayName => $"{CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} · {SizeText}";
+    public string DisplayName => $"#{Sequence} · {CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} · {SizeText}";
 }
