@@ -118,7 +118,7 @@ public sealed class BackupService : IBackupService
         };
 
         WriteManifest(backup);
-        onOutput(OutputLine.Info($"[backup] Saved snapshot ({backup.SizeText})."));
+        onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}) → {Path.GetFileName(packagePath)}"));
         Prune(folder, onOutput);
         return backup;
     }
@@ -160,7 +160,8 @@ public sealed class BackupService : IBackupService
             ?? throw new InvalidOperationException($"Profile '{profile.Name}' cannot be restored to.");
 
         onOutput(OutputLine.Info(
-            $"[restore] Restoring snapshot from {backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} to '{profile.Name}' …"));
+            $"[restore] Restoring snapshot #{backup.Sequence} from {backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} " +
+            $"({backup.SizeText}, {Path.GetFileName(backup.PackagePath)}) to '{profile.Name}' …"));
 
         switch (target)
         {
