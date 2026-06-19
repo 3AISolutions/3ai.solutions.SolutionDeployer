@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SolutionDeployer.Core.Models;
 
@@ -48,6 +49,28 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
     public string Target => Profile.ServerUrl ?? Profile.SiteName ?? string.Empty;
 
     public bool RequiresCredentials => Profile.RequiresCredentials;
+
+    /// <summary>Whether this profile's deployment target can be snapshotted/restored.</summary>
+    [ObservableProperty]
+    private bool _supportsBackup;
+
+    /// <summary>Previously-captured snapshots for this profile, newest first.</summary>
+    public ObservableCollection<BackupEntryViewModel> Backups { get; } = [];
+
+    public bool HasBackups => Backups.Count > 0;
+
+    /// <summary>The snapshot chosen in the restore picker.</summary>
+    [ObservableProperty]
+    private BackupEntryViewModel? _selectedBackup;
+
+    public void SetBackups(IEnumerable<BackupEntryViewModel> entries)
+    {
+        Backups.Clear();
+        foreach (var entry in entries)
+            Backups.Add(entry);
+        SelectedBackup = Backups.FirstOrDefault();
+        OnPropertyChanged(nameof(HasBackups));
+    }
 
     /// <summary>Engines selectable per profile (bound by the row's ComboBox).</summary>
     public static IReadOnlyList<PublishEngineKind> Engines { get; } =

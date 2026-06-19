@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Profiles;
 using SolutionDeployer.Core.Projects;
@@ -24,6 +25,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPublishEngine, ScriptPublishEngine>();
         services.AddSingleton<IPublishEngineFactory, PublishEngineFactory>();
         services.AddSingleton<DeploymentRunner>();
+
+        services.AddSingleton<MsDeployLocator>();
+        services.AddSingleton<IBackupService>(sp => new BackupService(
+            sp.GetRequiredService<ProcessRunner>(),
+            sp.GetRequiredService<MsDeployLocator>(),
+            retention: sp.GetRequiredService<SettingsStore>().Load().BackupRetention));
 
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());

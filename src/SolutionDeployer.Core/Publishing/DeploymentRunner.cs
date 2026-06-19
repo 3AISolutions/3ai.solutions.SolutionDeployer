@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.Core.Publishing;
@@ -16,13 +17,16 @@ public sealed class DeploymentRunOptions
 
     /// <summary>In sequential mode, stop after the first failed job.</summary>
     public bool StopOnFirstFailure { get; init; }
+
+    /// <summary>Snapshot the current deployment before each profile publish (where supported).</summary>
+    public bool BackupBeforePublish { get; init; }
 }
 
 /// <summary>
 /// Runs a batch of <see cref="PublishJob"/>s (any combination of project+profile selections),
 /// streaming tagged output and reporting per-job results as they complete.
 /// </summary>
-public sealed class DeploymentRunner(IPublishEngineFactory engineFactory)
+public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBackupService backupService)
 {
     public async Task<IReadOnlyList<PublishResult>> RunAsync(
         IReadOnlyList<PublishJob> jobs,
@@ -40,6 +44,9 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory)
         {
             var engine = engineFactory.Get(job.Engine);
             void Sink(OutputLine line) => onOutput(new JobOutput(job.Id, job.DisplayName, line));
+
+            if (options.BackupBeforePublish)
+                await TryBackupAsync(job, Sink, cancellationToken).ConfigureAwait(false);
 
             PublishResult result;
             try
@@ -104,5 +111,34 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory)
             .Where(j => byId.ContainsKey(j.Id))
             .Select(j => byId[j.Id])
             .ToList();
+    }
+
+    /// <summary>
+    /// Best-effort backup before a publish. Skips script jobs and unsupported profiles, and treats a
+    /// backup failure as a logged warning rather than aborting the publish.
+    /// </summary>
+    private async Task TryBackupAsync(PublishJob job, Action<OutputLine> sink, CancellationToken cancellationToken)
+    {
+        if (job.Profile is null)
+            return;
+
+        if (!backupService.CanBackUp(job.Profile, job.Project.ProjectDirectory, out var reason))
+        {
+            sink(OutputLine.Info($"[backup] Skipped — {reason}"));
+            return;
+        }
+
+        try
+        {
+            await backupService.BackUpAsync(job, sink, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            sink(OutputLine.Error($"[backup] Failed: {ex.Message}. Proceeding with publish."));
+        }
     }
 }
