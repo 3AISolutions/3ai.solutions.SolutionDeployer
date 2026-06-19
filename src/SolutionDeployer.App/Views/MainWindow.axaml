@@ -69,7 +69,11 @@
             <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
                 <Button Grid.Column="0" Content="Select All" Command="{Binding SelectAllCommand}" Margin="0,0,6,0" />
                 <Button Grid.Column="1" Content="Clear" Command="{Binding ClearSelectionCommand}" Margin="0,0,12,0" />
-                <CheckBox Grid.Column="2" Content="Run in parallel" IsChecked="{Binding RunInParallel}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" VerticalAlignment="Center" />
+                    <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}" VerticalAlignment="Center"
+                              ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
+                </StackPanel>
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="0,0,12,0">
                     <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
                 </TextBlock>
@@ -135,8 +139,8 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ProfileViewModel">
                                                 <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6">
-                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto">
-                                                        <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+                                                        <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
                                                                   IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
                                                         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                             <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />
@@ -162,6 +166,28 @@
                                                                       FontSize="11" VerticalAlignment="Center"
                                                                       IsVisible="{Binding CanRememberPassword}"
                                                                       ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"
+                                                                    IsVisible="{Binding SupportsBackup}">
+                                                            <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
+                                                            <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup}"
+                                                                      MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">
+                                                                <ComboBox.ItemTemplate>
+                                                                    <DataTemplate x:DataType="vm:BackupEntryViewModel">
+                                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" />
+                                                                    </DataTemplate>
+                                                                </ComboBox.ItemTemplate>
+                                                            </ComboBox>
+                                                            <Button Content="Restore" FontSize="11" Padding="6,2"
+                                                                    IsEnabled="{Binding HasBackups}"
+                                                                    ToolTip.Tip="Restore the selected snapshot to this target (overwrites current deployed files)"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
+                                                                    CommandParameter="{Binding SelectedBackup}" />
+                                                            <Button Content="↻" FontSize="11" Padding="6,2"
+                                                                    ToolTip.Tip="Refresh the snapshot list"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
+                                                                    CommandParameter="{Binding}" />
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>

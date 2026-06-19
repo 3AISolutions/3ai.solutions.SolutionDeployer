@@ -16,6 +16,12 @@ public sealed class AppSettings
     /// <summary>Run selected jobs in parallel by default.</summary>
     public bool RunInParallel { get; set; }
 
+    /// <summary>Snapshot the current deployment before publishing (MSDeploy / FileSystem profiles).</summary>
+    public bool BackupBeforePublish { get; set; }
+
+    /// <summary>How many snapshots to keep per profile before the oldest are pruned.</summary>
+    public int BackupRetention { get; set; } = 10;
+
     /// <summary>Remembered usernames keyed by profile file path (no passwords).</summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 

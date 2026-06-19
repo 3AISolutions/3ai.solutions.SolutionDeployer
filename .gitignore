@@ -268,6 +268,8 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# …but our backup feature's source folder is real code, not a VS conversion backup.
+!/src/SolutionDeployer.Core/Backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/

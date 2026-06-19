@@ -1,5 +1,6 @@
 using SolutionDeployer.App.Services;
 using SolutionDeployer.App.ViewModels;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Profiles;
@@ -44,13 +45,15 @@ public sealed class ScriptRefreshTests : IDisposable
             new MsBuildPublishEngine(processRunner, new MsBuildLocator()),
             new ScriptPublishEngine(processRunner),
         });
-        var runner = new DeploymentRunner(engineFactory);
+        var backupService = new BackupService(
+            processRunner, new MsDeployLocator(), rootOverride: Path.Combine(_tempDir, "Backups"));
+        var runner = new DeploymentRunner(engineFactory, backupService);
         var settings = new SettingsStore(_settingsPath);
         var editor = new FakeScriptEditor();
 
         var vm = new MainWindowViewModel(
             sourceLoader, runner, engineFactory, settings,
-            new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor);
+            new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService);
 
         return (vm, editor);
     }

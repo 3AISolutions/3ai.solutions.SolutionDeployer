@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.App.Services;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
@@ -20,6 +21,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly UpdateService _updateService;
     private readonly ICredentialStore _credentialStore;
     private readonly IScriptEditorService _scriptEditor;
+    private readonly IBackupService _backupService;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -34,7 +36,8 @@ public partial class MainWindowViewModel : ObservableObject
         IFilePickerService filePicker,
         UpdateService updateService,
         ICredentialStore credentialStore,
-        IScriptEditorService scriptEditor)
+        IScriptEditorService scriptEditor,
+        IBackupService backupService)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -44,10 +47,12 @@ public partial class MainWindowViewModel : ObservableObject
         _updateService = updateService;
         _credentialStore = credentialStore;
         _scriptEditor = scriptEditor;
+        _backupService = backupService;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
         _runInParallel = _settings.RunInParallel;
+        _backupBeforePublish = _settings.BackupBeforePublish;
         _updateRepository = _settings.UpdateRepository;
         _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
         SyncRecent();
@@ -61,11 +66,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
     private bool _isRunning;
 
     [ObservableProperty]
@@ -73,6 +80,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _runInParallel;
+
+    [ObservableProperty]
+    private bool _backupBeforePublish;
 
     [ObservableProperty]
     private bool _restoreSourcesOnStartup;
@@ -89,6 +99,12 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnRunInParallelChanged(bool value)
     {
         _settings.RunInParallel = value;
+        _settingsStore.Save(_settings);
+    }
+
+    partial void OnBackupBeforePublishChanged(bool value)
+    {
+        _settings.BackupBeforePublish = value;
         _settingsStore.Save(_settings);
     }
 
@@ -292,8 +308,11 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     _settings.RememberedUserNames.TryGetValue(profile.FilePath, out var rememberedUser);
                     var rememberedPassword = credentialsAvailable ? _credentialStore.Get(profile.FilePath) : null;
-                    projectVm.Profiles.Add(new ProfileViewModel(
-                        projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable));
+                    var profileVm = new ProfileViewModel(
+                        projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
+                    profileVm.SupportsBackup = _backupService.CanBackUp(profile, project.ProjectDirectory, out _);
+                    LoadBackups(profileVm);
+                    projectVm.Profiles.Add(profileVm);
                 }
 
                 foreach (var script in _settings.GetScriptTargets(project.ProjectPath))
@@ -534,7 +553,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var options = new DeploymentRunOptions { RunInParallel = RunInParallel, MaxParallelism = 4 };
+            var options = new DeploymentRunOptions
+            {
+                RunInParallel = RunInParallel,
+                MaxParallelism = 4,
+                BackupBeforePublish = BackupBeforePublish,
+            };
             var results = await _deploymentRunner.RunAsync(jobs, options, OnOutput, OnJobCompleted, _runCts.Token);
 
             var ok = results.Count(r => r.IsSuccess);
@@ -543,6 +567,11 @@ public partial class MainWindowViewModel : ObservableObject
                 ? $"All {ok} target(s) succeeded."
                 : $"{ok} succeeded, {failed} failed.";
             Log.Add(LogLine.System($"── {StatusMessage} ──"));
+
+            // A backup taken during the run produces a new snapshot — refresh the restore lists.
+            if (BackupBeforePublish)
+                foreach (var profileVm in selectedProfiles)
+                    LoadBackups(profileVm);
         }
         catch (OperationCanceledException)
         {
@@ -569,6 +598,77 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _runCts?.Cancel();
         StatusMessage = "Cancelling…";
+    }
+
+    // ---- Backup / restore -------------------------------------------------
+
+    /// <summary>Repopulates a profile's snapshot list from disk.</summary>
+    private void LoadBackups(ProfileViewModel profileVm)
+    {
+        if (!profileVm.SupportsBackup)
+            return;
+
+        var projectDir = profileVm.Parent.Project.ProjectDirectory;
+        var entries = _backupService
+            .List(profileVm.Profile, projectDir)
+            .Select(b => new BackupEntryViewModel(profileVm, b));
+        profileVm.SetBackups(entries);
+    }
+
+    [RelayCommand]
+    private void RefreshBackups(ProfileViewModel? profile)
+    {
+        if (profile is not null)
+            LoadBackups(profile);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeploy))]
+    private async Task RestoreAsync(BackupEntryViewModel? entry)
+    {
+        if (entry is null)
+            return;
+
+        var profileVm = entry.Parent;
+        var projectDir = profileVm.Parent.Project.ProjectDirectory;
+
+        IsRunning = true;
+        _runCts = new CancellationTokenSource();
+        Log.Add(LogLine.System($"── Restoring {profileVm.Name} from {entry.Backup.DisplayName} ──"));
+        StatusMessage = $"Restoring {profileVm.Name}…";
+
+        void Sink(OutputLine line) =>
+            Dispatcher.UIThread.Post(() => AppendLog(LogLine.From(profileVm.Name, line)));
+
+        try
+        {
+            await _backupService.RestoreAsync(
+                entry.Backup,
+                profileVm.Profile,
+                projectDir,
+                profileVm.BuildCredentials(),
+                allowUntrustedCertificate: true,
+                Sink,
+                _runCts.Token);
+
+            StatusMessage = $"Restored {profileVm.Name}.";
+            Log.Add(LogLine.System($"── Restored {profileVm.Name} ──"));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Restore cancelled.";
+            Log.Add(LogLine.System("── Restore cancelled ──"));
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Restore failed: {ex.Message}";
+            Log.Add(LogLine.System($"ERROR: {ex.Message}"));
+        }
+        finally
+        {
+            IsRunning = false;
+            _runCts?.Dispose();
+            _runCts = null;
+        }
     }
 
     [RelayCommand]
