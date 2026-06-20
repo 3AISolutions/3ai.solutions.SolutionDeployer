@@ -103,6 +103,10 @@ public sealed class BackupService : IBackupService
             return null;
         }
 
+        // Compare against the newest prior snapshot (this one isn't written yet) to detect a no-op deploy.
+        var previous = ReadAll(folder).FirstOrDefault();
+        var contentHash = ComputeContentFingerprint(packagePath);
+
         var backup = new DeploymentBackup
         {
             Id = id,
@@ -115,10 +119,19 @@ public sealed class BackupService : IBackupService
             PackagePath = packagePath,
             SizeBytes = new FileInfo(packagePath).Length,
             Target = target.DisplayTarget,
+            ContentHash = contentHash,
         };
 
         WriteManifest(backup);
-        onOutput(OutputLine.Info($"[backup] Saved snapshot ({backup.SizeText})."));
+        onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}) → {Path.GetFileName(packagePath)}"));
+
+        if (previous?.ContentHash is { } priorHash && priorHash == contentHash)
+        {
+            onOutput(OutputLine.Info(
+                $"[backup] NOTE: this snapshot is identical to snapshot #{previous.Sequence} — the deployed " +
+                "content has not changed since then (nothing new was deployed)."));
+        }
+
         Prune(folder, onOutput);
         return backup;
     }
@@ -160,7 +173,8 @@ public sealed class BackupService : IBackupService
             ?? throw new InvalidOperationException($"Profile '{profile.Name}' cannot be restored to.");
 
         onOutput(OutputLine.Info(
-            $"[restore] Restoring snapshot from {backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} to '{profile.Name}' …"));
+            $"[restore] Restoring snapshot #{backup.Sequence} from {backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} " +
+            $"({backup.SizeText}, {Path.GetFileName(backup.PackagePath)}) to '{profile.Name}' …"));
 
         switch (target)
         {
@@ -417,6 +431,29 @@ public sealed class BackupService : IBackupService
     {
         var chars = name.Select(c => Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c).ToArray();
         return new string(chars);
+    }
+
+    // MSDeploy package metadata that changes on every pull even when the payload is identical.
+    private static readonly HashSet<string> PackageMetadata =
+        new(StringComparer.OrdinalIgnoreCase) { "archive.xml", "systemInfo.xml", "parameters.xml" };
+
+    /// <summary>
+    /// A stable fingerprint of the captured payload: SHA-256 over each content entry's name and
+    /// uncompressed size, sorted, ignoring volatile package metadata. Two snapshots with the same
+    /// fingerprint contain the same deployed content even though their zip bytes differ.
+    /// </summary>
+    private static string ComputeContentFingerprint(string zipPath)
+    {
+        using var archive = ZipFile.OpenRead(zipPath);
+        var sb = new StringBuilder();
+        foreach (var entry in archive.Entries
+                     .Where(e => !PackageMetadata.Contains(e.FullName))
+                     .OrderBy(e => e.FullName, StringComparer.Ordinal))
+        {
+            sb.Append(entry.FullName).Append(':').Append(entry.Length).Append('\n');
+        }
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
     private static string ManifestPath(DeploymentBackup backup) =>

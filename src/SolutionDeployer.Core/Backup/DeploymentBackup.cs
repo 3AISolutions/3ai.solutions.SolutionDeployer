@@ -42,6 +42,13 @@ public sealed class DeploymentBackup
     /// <summary>Absolute path to the snapshot zip on disk.</summary>
     public required string PackagePath { get; init; }
 
+    /// <summary>
+    /// Fingerprint of the captured payload (entry names + sizes, excluding volatile MSDeploy package
+    /// metadata). Lets a new snapshot be recognised as identical to the previous one — i.e. the
+    /// deployment content did not actually change.
+    /// </summary>
+    public string? ContentHash { get; init; }
+
     public long SizeBytes { get; init; }
 
     /// <summary>The server/site or folder the snapshot came from, for display only.</summary>

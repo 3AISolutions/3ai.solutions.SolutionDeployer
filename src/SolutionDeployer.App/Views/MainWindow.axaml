@@ -184,6 +184,11 @@
                                                                     ToolTip.Tip="Restore the selected snapshot to this target (overwrites current deployed files)"
                                                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
                                                                     CommandParameter="{Binding SelectedBackup}" />
+                                                            <Button Content="Delete" FontSize="11" Padding="6,2"
+                                                                    IsEnabled="{Binding HasBackups}"
+                                                                    ToolTip.Tip="Delete the selected snapshot"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
+                                                                    CommandParameter="{Binding SelectedBackup}" />
                                                             <Button Content="↻" FontSize="11" Padding="6,2"
                                                                     ToolTip.Tip="Refresh the snapshot list"
                                                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"

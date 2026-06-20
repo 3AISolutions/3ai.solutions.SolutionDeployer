@@ -171,6 +171,31 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Identical_content_is_flagged_and_changed_content_is_not()
+    {
+        var dest = Path.Combine(_tempDir, "dest");
+        Directory.CreateDirectory(dest);
+        await File.WriteAllTextAsync(Path.Combine(dest, "app.dll"), "v1");
+        var profile = FileSystemProfile(dest);
+        var job = JobFor(profile);
+
+        var b1 = await _service.BackUpAsync(job, _ => { });
+
+        // Same content again → flagged as identical to the previous snapshot.
+        var lines2 = new List<OutputLine>();
+        var b2 = await _service.BackUpAsync(job, lines2.Add);
+        Assert.Equal(b1!.ContentHash, b2!.ContentHash);
+        Assert.Contains(lines2, l => l.Text.Contains("identical to snapshot #", StringComparison.OrdinalIgnoreCase));
+
+        // Genuinely changed content → not flagged, different fingerprint.
+        await File.WriteAllTextAsync(Path.Combine(dest, "app.dll"), "v2-different-bytes");
+        var lines3 = new List<OutputLine>();
+        var b3 = await _service.BackUpAsync(job, lines3.Add);
+        Assert.NotEqual(b2.ContentHash, b3!.ContentHash);
+        Assert.DoesNotContain(lines3, l => l.Text.Contains("identical to snapshot #", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Delete_removes_snapshot()
     {
         var dest = Path.Combine(_tempDir, "dest");

@@ -67,12 +67,14 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     private bool _isRunning;
 
     [ObservableProperty]
@@ -631,6 +633,15 @@ public partial class MainWindowViewModel : ObservableObject
         var profileVm = entry.Parent;
         var projectDir = profileVm.Parent.Project.ProjectDirectory;
 
+        // The snapshot may have been deleted on disk since the list was loaded.
+        if (!File.Exists(entry.Backup.PackagePath))
+        {
+            StatusMessage = "That snapshot is no longer on disk — refreshed the list.";
+            Log.Add(LogLine.System($"ERROR: snapshot package not found: {entry.Backup.PackagePath}"));
+            LoadBackups(profileVm);
+            return;
+        }
+
         IsRunning = true;
         _runCts = new CancellationTokenSource();
         Log.Add(LogLine.System($"── Restoring {profileVm.Name} from {entry.Backup.DisplayName} ──"));
@@ -669,6 +680,26 @@ public partial class MainWindowViewModel : ObservableObject
             _runCts?.Dispose();
             _runCts = null;
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeploy))]
+    private void DeleteBackup(BackupEntryViewModel? entry)
+    {
+        if (entry is null)
+            return;
+
+        var profileVm = entry.Parent;
+        if (_backupService.Delete(entry.Backup))
+        {
+            Log.Add(LogLine.System($"Deleted snapshot {entry.Backup.DisplayName} for {profileVm.Name}."));
+            StatusMessage = $"Deleted snapshot for {profileVm.Name}.";
+        }
+        else
+        {
+            StatusMessage = "Could not delete that snapshot.";
+        }
+
+        LoadBackups(profileVm);
     }
 
     [RelayCommand]
