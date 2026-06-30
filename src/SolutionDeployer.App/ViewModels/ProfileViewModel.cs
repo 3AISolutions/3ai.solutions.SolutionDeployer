@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.ViewModels;
@@ -59,9 +60,21 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
 
     public bool HasBackups => Backups.Count > 0;
 
+    public int BackupCount => Backups.Count;
+
+    /// <summary>Compact badge text shown next to "Summary" (e.g. "📸 3").</summary>
+    public string BackupBadge => $"📸 {Backups.Count}";
+
+    /// <summary>The snapshot restore row is collapsed by default; the badge toggles it per profile.</summary>
+    [ObservableProperty]
+    private bool _showBackups;
+
     /// <summary>The snapshot chosen in the restore picker.</summary>
     [ObservableProperty]
     private BackupEntryViewModel? _selectedBackup;
+
+    [RelayCommand]
+    private void ToggleBackups() => ShowBackups = !ShowBackups;
 
     public void SetBackups(IEnumerable<BackupEntryViewModel> entries)
     {
@@ -70,6 +83,8 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
             Backups.Add(entry);
         SelectedBackup = Backups.FirstOrDefault();
         OnPropertyChanged(nameof(HasBackups));
+        OnPropertyChanged(nameof(BackupCount));
+        OnPropertyChanged(nameof(BackupBadge));
     }
 
     /// <summary>Engines selectable per profile (bound by the row's ComboBox).</summary>
