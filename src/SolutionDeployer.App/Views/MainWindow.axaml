@@ -23,8 +23,8 @@
             <Setter Property="BorderBrush" Value="#33808080" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="8" />
-            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
     </Window.Styles>
 
@@ -110,7 +110,7 @@
                     <ItemsControl ItemsSource="{Binding Sources}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:SourceViewModel">
-                              <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,6">
+                              <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,3">
                                 <Expander.Header>
                                     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                                         <Border Grid.Column="0" Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center">
@@ -130,10 +130,10 @@
                                                 CommandParameter="{Binding}" />
                                     </Grid>
                                 </Expander.Header>
-                                <ItemsControl ItemsSource="{Binding Projects}" Margin="14,2,0,2">
+                                <ItemsControl ItemsSource="{Binding Projects}" Margin="14,1,0,1">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ProjectViewModel">
-                                <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,4">
+                                <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,2">
                                     <Expander.Header>
                                         <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsThreeState="True"
@@ -148,10 +148,10 @@
                                         </Grid>
                                     </Expander.Header>
                                     <StackPanel>
-                                    <ItemsControl ItemsSource="{Binding Profiles}" Margin="20,4,0,4">
+                                    <ItemsControl ItemsSource="{Binding Profiles}" Margin="20,1,0,1">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ProfileViewModel">
-                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
+                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,3"
                                                         IsVisible="{Binding IsVisible}">
                                                     <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
                                                         <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
@@ -169,7 +169,7 @@
                                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ResultText}"
                                                                    Opacity="0.8" VerticalAlignment="Center" FontSize="11" />
                                                         <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
                                                             <ComboBox ItemsSource="{Binding Engines}"
                                                                       SelectedItem="{Binding Engine}" MinWidth="90" FontSize="11" />
                                                             <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
@@ -184,10 +184,14 @@
                                                                     ToolTip.Tip="Commit history for this project and its dependencies since the last deploy"
                                                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ReleaseSummaryCommand}"
                                                                     CommandParameter="{Binding}" />
+                                                            <Button Content="{Binding BackupBadge}" FontSize="11" Padding="6,2"
+                                                                    IsVisible="{Binding SupportsBackup}"
+                                                                    ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
+                                                                    Command="{Binding ToggleBackupsCommand}" />
                                                         </StackPanel>
                                                         <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"
-                                                                    IsVisible="{Binding SupportsBackup}">
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,3,0,0"
+                                                                    IsVisible="{Binding ShowBackups}">
                                                             <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
                                                             <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
                                                                       MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">
