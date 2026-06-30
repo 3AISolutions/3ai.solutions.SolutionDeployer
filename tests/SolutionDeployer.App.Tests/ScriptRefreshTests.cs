@@ -55,7 +55,8 @@ public sealed class ScriptRefreshTests : IDisposable
         var vm = new MainWindowViewModel(
             sourceLoader, runner, engineFactory, settings,
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
-            new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets());
+            new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
+            new FakeUpdatePrompt());
 
         return (vm, editor);
     }

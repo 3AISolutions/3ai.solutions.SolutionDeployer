@@ -28,6 +28,7 @@ public partial class App : Application
             services.AddSingleton<IDeployConfirmationService, DeployConfirmationService>();
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
+            services.AddSingleton<IUpdatePromptService, UpdatePromptService>();
             services.AddSingleton<UpdateService>();
             services.AddSingleton<MainWindowViewModel>();
 

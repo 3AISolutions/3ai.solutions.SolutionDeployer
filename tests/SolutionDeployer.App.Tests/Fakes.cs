@@ -61,3 +61,11 @@ public sealed class FakeRemoteTargets : IRemoteTargetsService
 {
     public Task ShowAsync(SolutionDeployer.Core.Configuration.AppSettings settings) => Task.CompletedTask;
 }
+
+/// <summary>Update-prompt stub; declines by default so tests never trigger an update.</summary>
+public sealed class FakeUpdatePrompt : IUpdatePromptService
+{
+    public bool Next { get; set; }
+
+    public Task<bool> ConfirmUpdateAsync(string? version, string? notes) => Task.FromResult(Next);
+}

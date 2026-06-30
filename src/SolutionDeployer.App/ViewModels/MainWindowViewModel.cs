@@ -27,6 +27,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IGitHistoryService _gitHistory;
     private readonly IReleaseSummaryService _releaseSummary;
     private readonly IRemoteTargetsService _remoteTargets;
+    private readonly IUpdatePromptService _updatePrompt;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -46,7 +47,8 @@ public partial class MainWindowViewModel : ObservableObject
         IDeployConfirmationService confirmationService,
         IGitHistoryService gitHistory,
         IReleaseSummaryService releaseSummary,
-        IRemoteTargetsService remoteTargets)
+        IRemoteTargetsService remoteTargets,
+        IUpdatePromptService updatePrompt)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -61,6 +63,7 @@ public partial class MainWindowViewModel : ObservableObject
         _gitHistory = gitHistory;
         _releaseSummary = releaseSummary;
         _remoteTargets = remoteTargets;
+        _updatePrompt = updatePrompt;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -987,7 +990,13 @@ public partial class MainWindowViewModel : ObservableObject
             var result = await _updateService.CheckForUpdatesAsync(UpdateRepository);
             UpdateStatus = result.Message;
             if (result.UpdateAvailable)
-                await ApplyUpdateAsync();
+            {
+                // Show what's new and let the user decide, rather than updating silently.
+                if (await _updatePrompt.ConfirmUpdateAsync(result.Version, result.Notes))
+                    await ApplyUpdateAsync();
+                else
+                    UpdateStatus = $"Update to {result.Version} postponed.";
+            }
         }
         catch (Exception ex)
         {
