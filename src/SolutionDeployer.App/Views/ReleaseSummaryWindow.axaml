@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        xmlns:git="clr-namespace:SolutionDeployer.Core.Git;assembly=SolutionDeployer.Core"
+        x:Class="SolutionDeployer.App.Views.ReleaseSummaryWindow"
+        x:DataType="vm:ReleaseSummaryViewModel"
+        Title="{Binding Title}"
+        Width="680" Height="560" MinWidth="520" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+            <Button Grid.Column="1" Name="CopyButton" Content="Copy" Margin="0,0,8,0"
+                    ToolTip.Tip="Copy the summary as text" Click="OnCopyClick" />
+            <Button Grid.Column="2" Content="Close" Command="{Binding CloseCommand}" Classes="accent" />
+        </Grid>
+
+        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Projects}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="git:ProjectHistory">
+                            <StackPanel Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center"
+                                            IsVisible="{Binding IsRoot}">
+                                        <TextBlock Text="deployed" FontSize="10" />
+                                    </Border>
+                                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Branch, StringFormat='[{0}]'}" Opacity="0.6" FontSize="11"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="● uncommitted changes" Foreground="#E0A044" FontSize="11"
+                                               VerticalAlignment="Center" IsVisible="{Binding IsDirty}" />
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding Note}" Opacity="0.6" FontSize="11" Margin="0,2,0,0"
+                                           TextWrapping="Wrap" IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                                <ItemsControl ItemsSource="{Binding Commits}" Margin="4,4,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="git:CommitInfo">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Text="{Binding ShortSha}" Margin="0,0,8,0"
+                                                           FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11" Opacity="0.7" />
+                                                <TextBlock Grid.Column="1" FontSize="11" TextWrapping="Wrap">
+                                                    <Run Text="{Binding Subject}" /><Run Text="  " /><Run Text="{Binding Author}" Foreground="#888" /><Run Text=", " Foreground="#888" /><Run Text="{Binding Date}" Foreground="#888" />
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Configuration;
+using SolutionDeployer.Core.Git;
 using SolutionDeployer.Core.Profiles;
 using SolutionDeployer.Core.Projects;
 using SolutionDeployer.Core.Publishing;
@@ -31,6 +32,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ProcessRunner>(),
             sp.GetRequiredService<MsDeployLocator>(),
             retention: sp.GetRequiredService<SettingsStore>().Load().BackupRetention));
+
+        services.AddSingleton<IGitHistoryService, GitHistoryService>();
 
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());

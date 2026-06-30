@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.App.Services;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Configuration;
+using SolutionDeployer.Core.Git;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
 using SolutionDeployer.Core.Solutions;
@@ -23,6 +24,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IScriptEditorService _scriptEditor;
     private readonly IBackupService _backupService;
     private readonly IDeployConfirmationService _confirmationService;
+    private readonly IGitHistoryService _gitHistory;
+    private readonly IReleaseSummaryService _releaseSummary;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -39,7 +42,9 @@ public partial class MainWindowViewModel : ObservableObject
         ICredentialStore credentialStore,
         IScriptEditorService scriptEditor,
         IBackupService backupService,
-        IDeployConfirmationService confirmationService)
+        IDeployConfirmationService confirmationService,
+        IGitHistoryService gitHistory,
+        IReleaseSummaryService releaseSummary)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -51,6 +56,8 @@ public partial class MainWindowViewModel : ObservableObject
         _scriptEditor = scriptEditor;
         _backupService = backupService;
         _confirmationService = confirmationService;
+        _gitHistory = gitHistory;
+        _releaseSummary = releaseSummary;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -677,6 +684,13 @@ public partial class MainWindowViewModel : ObservableObject
             if (BackupBeforePublish)
                 foreach (var profileVm in selectedProfiles)
                     LoadBackups(profileVm);
+
+            // Record/log the git history for profiles that deployed successfully (informative only).
+            var succeeded = results
+                .Where(r => r.IsSuccess && jobsByTarget.TryGetValue(r.JobId, out var t) && t is ProfileViewModel)
+                .Select(r => (ProfileViewModel)jobsByTarget[r.JobId])
+                .ToList();
+            await RecordReleaseHistoryAsync(succeeded);
         }
         catch (OperationCanceledException)
         {
@@ -803,6 +817,73 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         LoadBackups(profileVm);
+    }
+
+    // ---- Release summary (git history) ------------------------------------
+
+    /// <summary>Opens the release-summary window for a profile's deployed project + dependencies.</summary>
+    [RelayCommand]
+    private async Task ReleaseSummaryAsync(ProfileViewModel? profile)
+    {
+        if (profile is null)
+            return;
+
+        StatusMessage = $"Building release summary for {profile.Parent.Name}…";
+        try
+        {
+            var previous = _settings.DeployHistory.TryGetValue(profile.Profile.FilePath, out var record)
+                ? record.ProjectShas
+                : new Dictionary<string, string>();
+
+            var summary = await _gitHistory.BuildSummaryAsync(
+                profile.Parent.Project.ProjectPath, profile.Parent.Name, previous);
+
+            await _releaseSummary.ShowAsync(summary);
+            StatusMessage = "Ready.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not build release summary: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// After a successful deploy, logs what changed since the last deploy and records the current
+    /// commit SHAs as the new baseline. Best-effort and informative only — never blocks a deploy.
+    /// </summary>
+    private async Task RecordReleaseHistoryAsync(IReadOnlyList<ProfileViewModel> deployed)
+    {
+        if (deployed.Count == 0 || !await _gitHistory.IsAvailableAsync())
+            return;
+
+        foreach (var profileVm in deployed)
+        {
+            try
+            {
+                var key = profileVm.Profile.FilePath;
+                var previous = _settings.DeployHistory.TryGetValue(key, out var record)
+                    ? record.ProjectShas
+                    : new Dictionary<string, string>();
+
+                var summary = await _gitHistory.BuildSummaryAsync(
+                    profileVm.Parent.Project.ProjectPath, profileVm.Parent.Name, previous);
+
+                foreach (var line in summary.ToPlainText().Split('\n'))
+                    AppendLog(LogLine.From(profileVm.Name, OutputLine.Info(line.TrimEnd('\r'))));
+
+                var current = summary.Projects
+                    .Where(p => p.CurrentSha is not null)
+                    .ToDictionary(p => p.ProjectPath, p => p.CurrentSha!);
+                if (current.Count > 0)
+                    _settings.DeployHistory[key] = new DeployRecord { DeployedUtc = DateTimeOffset.UtcNow, ProjectShas = current };
+            }
+            catch
+            {
+                // Informative feature only — never disrupt the deploy result.
+            }
+        }
+
+        _settingsStore.Save(_settings);
     }
 
     [RelayCommand]

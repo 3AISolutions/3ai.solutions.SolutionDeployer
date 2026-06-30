@@ -172,6 +172,10 @@
                                                                       FontSize="11" VerticalAlignment="Center"
                                                                       IsVisible="{Binding CanRememberPassword}"
                                                                       ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                            <Button Content="Summary" FontSize="11" Padding="6,2"
+                                                                    ToolTip.Tip="Commit history for this project and its dependencies since the last deploy"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ReleaseSummaryCommand}"
+                                                                    CommandParameter="{Binding}" />
                                                         </StackPanel>
                                                         <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
                                                                     Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"

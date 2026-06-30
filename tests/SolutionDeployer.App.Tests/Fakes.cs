@@ -1,4 +1,5 @@
 using SolutionDeployer.App.Services;
+using SolutionDeployer.Core.Git;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.Tests;
@@ -32,4 +33,25 @@ public sealed class FakeDeployConfirmation : IDeployConfirmationService
 
     public Task<DeployConfirmation> ConfirmAsync(IReadOnlyList<string> targets, bool runInParallel) =>
         Task.FromResult(Next);
+}
+
+/// <summary>Inert git-history stub: reports unavailable so post-deploy recording is skipped.</summary>
+public sealed class FakeGitHistory : IGitHistoryService
+{
+    public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+    public Task<ReleaseSummary> BuildSummaryAsync(
+        string deployedProjectPath, string deployedProjectName,
+        IReadOnlyDictionary<string, string> previousShas, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ReleaseSummary { DeployedProjectName = deployedProjectName, Projects = [] });
+
+    public Task<IReadOnlyDictionary<string, string>> CaptureShasAsync(
+        string deployedProjectPath, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+}
+
+/// <summary>Release-summary stub; never opens a window.</summary>
+public sealed class FakeReleaseSummary : IReleaseSummaryService
+{
+    public Task ShowAsync(ReleaseSummary summary) => Task.CompletedTask;
 }
