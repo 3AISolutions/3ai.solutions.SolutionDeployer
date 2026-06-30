@@ -27,6 +27,7 @@ public partial class App : Application
             services.AddSingleton<IScriptEditorService, ScriptEditorService>();
             services.AddSingleton<IDeployConfirmationService, DeployConfirmationService>();
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
+            services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
             services.AddSingleton<UpdateService>();
             services.AddSingleton<MainWindowViewModel>();
 

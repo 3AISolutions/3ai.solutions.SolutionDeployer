@@ -5,6 +5,12 @@ using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.ViewModels;
 
+/// <summary>A selectable backup destination (local disk or a named remote) for the per-profile picker.</summary>
+public sealed record BackupDestinationOption(string Id, string Name)
+{
+    public override string ToString() => Name;
+}
+
 /// <summary>
 /// A selectable publish profile. Carries its own engine choice and (non-persisted) credentials so
 /// that any combination of profiles can be queued with per-target settings.
@@ -68,6 +74,34 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
     /// <summary>The snapshot restore row is collapsed by default; the badge toggles it per profile.</summary>
     [ObservableProperty]
     private bool _showBackups;
+
+    /// <summary>Available backup destinations (local + named remotes) for this profile's picker.</summary>
+    public ObservableCollection<BackupDestinationOption> BackupDestinations { get; } = [];
+
+    private bool _applyingDestination;
+
+    [ObservableProperty]
+    private BackupDestinationOption? _selectedDestination;
+
+    /// <summary>Raised when the user changes the destination (not when it's set programmatically).</summary>
+    public event Action<ProfileViewModel>? BackupDestinationChanged;
+
+    partial void OnSelectedDestinationChanged(BackupDestinationOption? value)
+    {
+        if (!_applyingDestination)
+            BackupDestinationChanged?.Invoke(this);
+    }
+
+    public void SetDestinations(IEnumerable<BackupDestinationOption> options, string selectedId)
+    {
+        _applyingDestination = true;
+        BackupDestinations.Clear();
+        foreach (var option in options)
+            BackupDestinations.Add(option);
+        SelectedDestination = BackupDestinations.FirstOrDefault(d => d.Id == selectedId)
+                              ?? BackupDestinations.FirstOrDefault();
+        _applyingDestination = false;
+    }
 
     /// <summary>The snapshot chosen in the restore picker.</summary>
     [ObservableProperty]

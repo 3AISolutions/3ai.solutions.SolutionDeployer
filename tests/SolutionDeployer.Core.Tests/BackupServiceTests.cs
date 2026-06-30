@@ -1,4 +1,5 @@
 using SolutionDeployer.Core.Backup;
+using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
 
@@ -15,7 +16,16 @@ public sealed class BackupServiceTests : IDisposable
         _tempDir = Path.Combine(Path.GetTempPath(), $"sd_backup_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
         _backupRoot = Path.Combine(_tempDir, "Backups");
-        _service = new BackupService(new ProcessRunner(), new MsDeployLocator(), _backupRoot, retention: 2);
+        _service = NewService(_backupRoot, retention: 2);
+    }
+
+    private BackupService NewService(string root, int retention)
+    {
+        var provider = new BackupStoreProvider(
+            new SettingsStore(Path.Combine(_tempDir, $"settings_{Guid.NewGuid():N}.json")),
+            new NullCredentialStore(),
+            localRootOverride: root);
+        return new BackupService(new ProcessRunner(), new MsDeployLocator(), provider, retention);
     }
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
@@ -93,7 +103,7 @@ public sealed class BackupServiceTests : IDisposable
         Assert.True(File.Exists(backup.PackagePath));
 
         // The snapshot is listed for the profile.
-        Assert.Single(_service.List(profile, _tempDir));
+        Assert.Single(await _service.ListAsync(profile, _tempDir));
 
         // Mutate the deployment: change a file, add a stray one, drop the subfolder.
         await File.WriteAllTextAsync(Path.Combine(dest, "index.html"), "v2-broken");
@@ -113,7 +123,7 @@ public sealed class BackupServiceTests : IDisposable
         var profile = FileSystemProfile(Path.Combine(_tempDir, "never-deployed"));
         var backup = await _service.BackUpAsync(JobFor(profile), _ => { });
         Assert.Null(backup);
-        Assert.Empty(_service.List(profile, _tempDir));
+        Assert.Empty(await _service.ListAsync(profile, _tempDir));
     }
 
     [Fact]
@@ -129,15 +139,14 @@ public sealed class BackupServiceTests : IDisposable
             Assert.NotNull(await _service.BackUpAsync(job, _ => { }));
 
         // retention is 2.
-        Assert.Equal(2, _service.List(profile, _tempDir).Count);
+        Assert.Equal(2, (await _service.ListAsync(profile, _tempDir)).Count);
     }
 
     [Fact]
     public async Task Restore_uses_the_selected_snapshot_even_when_taken_in_the_same_second()
     {
         // Ample retention so none of the three snapshots get pruned.
-        var service = new BackupService(new ProcessRunner(), new MsDeployLocator(),
-            Path.Combine(_tempDir, "Backups2"), retention: 10);
+        var service = NewService(Path.Combine(_tempDir, "Backups2"), retention: 10);
         var dest = Path.Combine(_tempDir, "dest");
         Directory.CreateDirectory(dest);
         var profile = FileSystemProfile(dest);
@@ -156,7 +165,7 @@ public sealed class BackupServiceTests : IDisposable
         Assert.NotNull(b3);
 
         // Sequences are monotonic and distinct, and List orders newest-first deterministically.
-        Assert.Equal([b3!.Sequence, b2!.Sequence, b1!.Sequence], service.List(profile, _tempDir).Select(b => b.Sequence));
+        Assert.Equal([b3!.Sequence, b2!.Sequence, b1!.Sequence], (await service.ListAsync(profile, _tempDir)).Select(b => b.Sequence));
         Assert.True(b1.Sequence < b2.Sequence && b2.Sequence < b3.Sequence);
 
         // Restoring a specific snapshot restores exactly that snapshot's content.
@@ -205,7 +214,7 @@ public sealed class BackupServiceTests : IDisposable
 
         var backup = await _service.BackUpAsync(JobFor(profile), _ => { });
         Assert.NotNull(backup);
-        Assert.True(_service.Delete(backup!));
-        Assert.Empty(_service.List(profile, _tempDir));
+        Assert.True(await _service.DeleteAsync(backup!));
+        Assert.Empty(await _service.ListAsync(profile, _tempDir));
     }
 }

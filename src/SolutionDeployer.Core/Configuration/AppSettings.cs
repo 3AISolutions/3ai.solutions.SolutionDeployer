@@ -22,6 +22,30 @@ public sealed class AppSettings
     /// <summary>How many snapshots to keep per profile before the oldest are pruned.</summary>
     public int BackupRetention { get; set; } = 10;
 
+    /// <summary>Named S3-compatible storage destinations available for backups (secret keys excluded).</summary>
+    public List<S3BackupTarget> RemoteBackupTargets { get; set; } = [];
+
+    /// <summary>
+    /// Per-profile backup destination, keyed by profile file path. Value is
+    /// <see cref="S3BackupTarget.LocalId"/> (or absent) for local disk, otherwise an
+    /// <see cref="S3BackupTarget.Id"/>.
+    /// </summary>
+    public Dictionary<string, string> ProfileBackupTarget { get; set; } = new();
+
+    /// <summary>The destination id configured for a profile, defaulting to local disk.</summary>
+    public string GetBackupTargetId(string profileFilePath) =>
+        ProfileBackupTarget.TryGetValue(profileFilePath, out var id) && !string.IsNullOrEmpty(id)
+            ? id
+            : S3BackupTarget.LocalId;
+
+    public void SetBackupTargetId(string profileFilePath, string targetId)
+    {
+        if (string.IsNullOrEmpty(targetId) || targetId == S3BackupTarget.LocalId)
+            ProfileBackupTarget.Remove(profileFilePath);
+        else
+            ProfileBackupTarget[profileFilePath] = targetId;
+    }
+
     /// <summary>
     /// Per-profile record of the git commit SHAs deployed last time, keyed by profile file path. Used
     /// to summarise what changed since the previous deployment.

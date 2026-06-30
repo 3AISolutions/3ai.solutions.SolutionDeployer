@@ -39,8 +39,14 @@ public sealed class DeploymentBackup
     /// </summary>
     public long Sequence { get; init; }
 
-    /// <summary>Absolute path to the snapshot zip on disk.</summary>
+    /// <summary>
+    /// Storage key for the snapshot zip: an absolute path for local disk, or an object key for an S3
+    /// destination. Interpreted by the owning <see cref="IBackupStore"/>.
+    /// </summary>
     public required string PackagePath { get; init; }
+
+    /// <summary>The destination this snapshot lives in ("local" or an S3 target id).</summary>
+    public string StorageTargetId { get; init; } = Configuration.S3BackupTarget.LocalId;
 
     /// <summary>
     /// Fingerprint of the captured payload (entry names + sizes, excluding volatile MSDeploy package
