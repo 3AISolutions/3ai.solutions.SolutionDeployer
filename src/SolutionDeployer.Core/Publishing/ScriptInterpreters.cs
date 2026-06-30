@@ -27,21 +27,27 @@ public static class ScriptInterpreters
         switch (ext)
         {
             case ".ps1":
-                if (OnPath("pwsh"))
-                    interpreter = new ResolvedInterpreter("pwsh", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
-                else if (OperatingSystem.IsWindows() && OnPath("powershell"))
-                    interpreter = new ResolvedInterpreter("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
+                string[] psArgs = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"];
+                // Prefer PowerShell 7 (pwsh), then fall back to Windows PowerShell. Probe well-known
+                // install locations as well as PATH, since the app's PATH may not include either.
+                var pwsh = Resolve("pwsh", PwshFallbackPaths());
+                if (pwsh is not null)
+                    interpreter = new ResolvedInterpreter(pwsh, psArgs);
+                else if (Resolve("powershell", WindowsPowerShellFallbackPaths()) is { } winPs)
+                    interpreter = new ResolvedInterpreter(winPs, psArgs);
                 else
                 {
-                    error = "PowerShell ('pwsh') was not found on PATH. Install PowerShell to run .ps1 scripts.";
+                    error = OperatingSystem.IsWindows()
+                        ? "Neither PowerShell 7 ('pwsh') nor Windows PowerShell ('powershell.exe') could be found. Install PowerShell to run .ps1 scripts."
+                        : "PowerShell ('pwsh') was not found. Install PowerShell 7 (https://aka.ms/powershell) to run .ps1 scripts on this platform.";
                     return false;
                 }
                 return true;
 
             case ".sh":
             case ".bash":
-                if (OnPath("bash"))
-                    interpreter = new ResolvedInterpreter("bash", []);
+                if (Resolve("bash", []) is { } bash)
+                    interpreter = new ResolvedInterpreter(bash, []);
                 else
                 {
                     error = "'bash' was not found on PATH.";
@@ -68,32 +74,67 @@ public static class ScriptInterpreters
     /// <summary>Whether the interpreter for this script exists on the current machine.</summary>
     public static bool IsAvailable(string scriptPath, out string? error) => TryResolve(scriptPath, out _, out error);
 
-    private static bool OnPath(string executable)
+    /// <summary>
+    /// Resolves <paramref name="executable"/> to a full path: first by scanning <c>PATH</c>, then by
+    /// checking the supplied well-known fallback locations. Returns null when it cannot be found.
+    /// </summary>
+    private static string? Resolve(string executable, IReadOnlyList<string> fallbackPaths)
     {
         var pathVar = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrEmpty(pathVar))
-            return false;
-
-        var candidates = OperatingSystem.IsWindows()
-            ? new[] { executable + ".exe", executable + ".cmd", executable + ".bat", executable }
-            : [executable];
-
-        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        if (!string.IsNullOrEmpty(pathVar))
         {
-            foreach (var name in candidates)
+            var candidates = OperatingSystem.IsWindows()
+                ? new[] { executable + ".exe", executable + ".cmd", executable + ".bat", executable }
+                : [executable];
+
+            foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             {
-                try
+                foreach (var name in candidates)
                 {
-                    if (File.Exists(Path.Combine(dir.Trim('"'), name)))
-                        return true;
-                }
-                catch
-                {
-                    // Ignore malformed PATH entries.
+                    try
+                    {
+                        var full = Path.Combine(dir.Trim('"'), name);
+                        if (File.Exists(full))
+                            return full;
+                    }
+                    catch
+                    {
+                        // Ignore malformed PATH entries.
+                    }
                 }
             }
         }
 
-        return false;
+        return fallbackPaths.FirstOrDefault(File.Exists);
+    }
+
+    private static string[] PwshFallbackPaths()
+    {
+        if (!OperatingSystem.IsWindows())
+            return ["/usr/bin/pwsh", "/usr/local/bin/pwsh", "/opt/microsoft/powershell/7/pwsh"];
+
+        var paths = new List<string>();
+        foreach (var pf in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                 })
+        {
+            if (!string.IsNullOrEmpty(pf))
+                paths.Add(Path.Combine(pf, "PowerShell", "7", "pwsh.exe"));
+        }
+
+        return [.. paths];
+    }
+
+    private static string[] WindowsPowerShellFallbackPaths()
+    {
+        if (!OperatingSystem.IsWindows())
+            return [];
+
+        var system = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        return string.IsNullOrEmpty(system)
+            ? []
+            : [Path.Combine(system, "WindowsPowerShell", "v1.0", "powershell.exe")];
     }
 }

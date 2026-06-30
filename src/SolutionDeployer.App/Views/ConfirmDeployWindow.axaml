@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.ConfirmDeployWindow"
+        x:DataType="vm:ConfirmDeployViewModel"
+        Title="Confirm deployment"
+        Width="520" Height="420" MinWidth="420" MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+            <CheckBox Grid.Column="0" Content="Don't ask again" IsChecked="{Binding DontAskAgain}" VerticalAlignment="Center"
+                      ToolTip.Tip="Turns off deploy confirmation (re-enable it from the toolbar)" />
+            <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Deploy" Command="{Binding ConfirmCommand}" Classes="accent" IsDefault="True" />
+        </Grid>
+
+        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Targets}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding}" Margin="0,2" TextWrapping="NoWrap" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

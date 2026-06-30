@@ -22,6 +22,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly ICredentialStore _credentialStore;
     private readonly IScriptEditorService _scriptEditor;
     private readonly IBackupService _backupService;
+    private readonly IDeployConfirmationService _confirmationService;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -37,7 +38,8 @@ public partial class MainWindowViewModel : ObservableObject
         UpdateService updateService,
         ICredentialStore credentialStore,
         IScriptEditorService scriptEditor,
-        IBackupService backupService)
+        IBackupService backupService,
+        IDeployConfirmationService confirmationService)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -48,11 +50,13 @@ public partial class MainWindowViewModel : ObservableObject
         _credentialStore = credentialStore;
         _scriptEditor = scriptEditor;
         _backupService = backupService;
+        _confirmationService = confirmationService;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
         _runInParallel = _settings.RunInParallel;
         _backupBeforePublish = _settings.BackupBeforePublish;
+        _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
         _updateRepository = _settings.UpdateRepository;
         _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
         SyncRecent();
@@ -87,6 +91,9 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _backupBeforePublish;
 
     [ObservableProperty]
+    private bool _confirmBeforeDeploy;
+
+    [ObservableProperty]
     private bool _restoreSourcesOnStartup;
 
     [ObservableProperty]
@@ -110,9 +117,30 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
+    partial void OnConfirmBeforeDeployChanged(bool value)
+    {
+        _settings.ConfirmBeforeDeploy = value;
+        _settingsStore.Save(_settings);
+    }
+
     partial void OnRestoreSourcesOnStartupChanged(bool value)
     {
         _settings.RestoreSourcesOnStartup = value;
+        _settingsStore.Save(_settings);
+    }
+
+    /// <summary>Window placement persisted from the previous session, for the view to restore.</summary>
+    public (double? Width, double? Height, int? X, int? Y, bool Maximized) SavedWindowPlacement =>
+        (_settings.WindowWidth, _settings.WindowHeight, _settings.WindowX, _settings.WindowY, _settings.WindowMaximized);
+
+    /// <summary>Persists the current window placement (called by the view as it closes).</summary>
+    public void SaveWindowPlacement(double width, double height, int x, int y, bool maximized)
+    {
+        _settings.WindowWidth = width;
+        _settings.WindowHeight = height;
+        _settings.WindowX = x;
+        _settings.WindowY = y;
+        _settings.WindowMaximized = maximized;
         _settingsStore.Save(_settings);
     }
 
@@ -481,6 +509,24 @@ public partial class MainWindowViewModel : ObservableObject
                 Log.Add(LogLine.System($"ERROR: {StatusMessage}"));
                 return;
             }
+        }
+
+        if (ConfirmBeforeDeploy)
+        {
+            var targets = selectedProfiles
+                .Select(p => $"{p.Parent.Name} → {p.Name}  [{p.Engine}]{(string.IsNullOrEmpty(p.Target) ? "" : $"  {p.Target}")}")
+                .Concat(selectedScripts.Select(s => $"{s.Parent.Name} → {s.Name}  (script)"))
+                .ToList();
+
+            var confirmation = await _confirmationService.ConfirmAsync(targets, RunInParallel);
+            if (!confirmation.Confirmed)
+            {
+                StatusMessage = "Deployment cancelled.";
+                return;
+            }
+
+            if (confirmation.DontAskAgain)
+                ConfirmBeforeDeploy = false; // persisted via OnConfirmBeforeDeployChanged
         }
 
         var jobsByTarget = new Dictionary<string, ISelectableTarget>();

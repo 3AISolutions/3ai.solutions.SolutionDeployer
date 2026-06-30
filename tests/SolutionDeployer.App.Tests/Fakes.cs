@@ -24,3 +24,12 @@ public sealed class FakeScriptEditor : IScriptEditorService
         return Task.FromResult(Next);
     }
 }
+
+/// <summary>Deploy-confirmation stub; confirms by default so deploy tests aren't blocked.</summary>
+public sealed class FakeDeployConfirmation : IDeployConfirmationService
+{
+    public DeployConfirmation Next { get; set; } = new(Confirmed: true, DontAskAgain: false);
+
+    public Task<DeployConfirmation> ConfirmAsync(IReadOnlyList<string> targets, bool runInParallel) =>
+        Task.FromResult(Next);
+}

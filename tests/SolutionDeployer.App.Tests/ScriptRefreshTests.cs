@@ -53,7 +53,8 @@ public sealed class ScriptRefreshTests : IDisposable
 
         var vm = new MainWindowViewModel(
             sourceLoader, runner, engineFactory, settings,
-            new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService);
+            new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
+            new FakeDeployConfirmation());
 
         return (vm, editor);
     }
