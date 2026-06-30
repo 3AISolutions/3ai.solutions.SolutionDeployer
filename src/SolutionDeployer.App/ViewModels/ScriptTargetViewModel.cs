@@ -28,6 +28,10 @@ public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
     public string Summary =>
         string.IsNullOrWhiteSpace(Target.Arguments) ? Target.ScriptPath : $"{Target.ScriptPath}  {Target.Arguments}";
 
+    /// <summary>False when hidden by the active filter.</summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     [ObservableProperty]
     private bool _isSelected;
 

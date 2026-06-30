@@ -44,6 +44,9 @@
                               VerticalAlignment="Center"
                               ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
                 </StackPanel>
+                <TextBox Grid.Column="2" Text="{Binding FilterText}" PlaceholderText="Filter projects / profiles…"
+                         MaxWidth="280" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0"
+                         ToolTip.Tip="Filter the tree by source, project, profile or script name" />
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{Binding AppVersion}" VerticalAlignment="Center" Opacity="0.7"
                                ToolTip.Tip="Installed version" />
@@ -97,7 +100,7 @@
                     <ItemsControl ItemsSource="{Binding Sources}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:SourceViewModel">
-                              <Expander IsExpanded="{Binding IsExpanded}" Margin="0,0,0,6">
+                              <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,6">
                                 <Expander.Header>
                                     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                                         <Border Grid.Column="0" Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center">
@@ -120,7 +123,7 @@
                                 <ItemsControl ItemsSource="{Binding Projects}" Margin="14,2,0,2">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ProjectViewModel">
-                                <Expander IsExpanded="{Binding IsExpanded}" Margin="0,0,0,4">
+                                <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,4">
                                     <Expander.Header>
                                         <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsThreeState="True"
@@ -138,7 +141,8 @@
                                     <ItemsControl ItemsSource="{Binding Profiles}" Margin="20,4,0,4">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ProfileViewModel">
-                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6">
+                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
+                                                        IsVisible="{Binding IsVisible}">
                                                     <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
                                                         <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
                                                                   IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
@@ -205,7 +209,8 @@
                                                   IsVisible="{Binding HasScripts}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ScriptTargetViewModel">
-                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6">
+                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
+                                                        IsVisible="{Binding IsVisible}">
                                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                                                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
                                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
