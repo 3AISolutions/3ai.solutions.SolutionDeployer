@@ -40,9 +40,6 @@
                     <ComboBox Name="RecentCombo" ItemsSource="{Binding RecentSolutions}"
                               PlaceholderText="Recent…" MinWidth="180"
                               SelectionChanged="OnRecentSelectionChanged" />
-                    <CheckBox Content="Restore on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
-                              VerticalAlignment="Center"
-                              ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
                 </StackPanel>
                 <TextBox Grid.Column="2" Text="{Binding FilterText}" PlaceholderText="Filter projects / profiles…"
                          MaxWidth="280" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0"
@@ -50,6 +47,24 @@
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{Binding AppVersion}" VerticalAlignment="Center" Opacity="0.7"
                                ToolTip.Tip="Installed version" />
+                    <Button Content="Options ▾" ToolTip.Tip="Deploy and startup options">
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedRight">
+                                <StackPanel x:DataType="vm:MainWindowViewModel" Spacing="8" MinWidth="240" Margin="4">
+                                    <TextBlock Text="WHEN DEPLOYING" FontSize="10" FontWeight="SemiBold" Opacity="0.6" />
+                                    <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" />
+                                    <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}"
+                                              ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
+                                    <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}"
+                                              ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
+                                    <Separator Margin="0,2" />
+                                    <TextBlock Text="ON STARTUP" FontSize="10" FontWeight="SemiBold" Opacity="0.6" />
+                                    <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
+                                              ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
                     <Button Content="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
                 </StackPanel>
             </Grid>
@@ -69,20 +84,13 @@
 
         <!-- Action bar -->
         <Border DockPanel.Dock="Top" Padding="10,6">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                 <Button Grid.Column="0" Content="Select All" Command="{Binding SelectAllCommand}" Margin="0,0,6,0" />
-                <Button Grid.Column="1" Content="Clear" Command="{Binding ClearSelectionCommand}" Margin="0,0,12,0" />
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" VerticalAlignment="Center" />
-                    <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}" VerticalAlignment="Center"
-                              ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
-                    <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}" VerticalAlignment="Center"
-                              ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
-                </StackPanel>
-                <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="0,0,12,0">
+                <Button Grid.Column="1" Content="Clear" Command="{Binding ClearSelectionCommand}" />
+                <TextBlock Grid.Column="3" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.7">
                     <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
                 </TextBlock>
-                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6">
+                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6">
                     <Button Content="Deploy Selected" Command="{Binding DeployCommand}"
                             Classes="accent" IsEnabled="{Binding !IsRunning}" />
                     <Button Content="Cancel" Command="{Binding CancelCommand}" />
