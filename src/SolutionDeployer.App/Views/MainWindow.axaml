@@ -73,6 +73,8 @@
                     <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" VerticalAlignment="Center" />
                     <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}" VerticalAlignment="Center"
                               ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
+                    <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}" VerticalAlignment="Center"
+                              ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
                 </StackPanel>
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="0,0,12,0">
                     <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />

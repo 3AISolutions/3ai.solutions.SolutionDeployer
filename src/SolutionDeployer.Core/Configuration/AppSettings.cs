@@ -37,6 +37,16 @@ public sealed class AppSettings
     /// <summary>Re-load <see cref="Sources"/> (and their selections) on startup.</summary>
     public bool RestoreSourcesOnStartup { get; set; } = true;
 
+    /// <summary>Ask for confirmation (listing the targets) before a deploy runs.</summary>
+    public bool ConfirmBeforeDeploy { get; set; } = true;
+
+    // --- Last window placement (restored on startup). Null until first saved. ---
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
+    public int? WindowX { get; set; }
+    public int? WindowY { get; set; }
+    public bool WindowMaximized { get; set; }
+
     /// <summary>
     /// Remembered target selections, keyed by source path (solution or project). Lets the same
     /// targets be re-checked when a source is reloaded.
