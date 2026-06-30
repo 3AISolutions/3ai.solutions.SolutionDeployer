@@ -63,6 +63,10 @@ public partial class ProjectViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExpanded = true;
 
+    /// <summary>False when hidden by the active filter.</summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     /// <summary>Tri-state: true = all selected, false = none, null = some.</summary>
     [ObservableProperty]
     private bool? _isSelected = false;

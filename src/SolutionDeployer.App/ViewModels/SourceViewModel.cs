@@ -29,6 +29,10 @@ public partial class SourceViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExpanded = true;
 
+    /// <summary>False when hidden by the active filter.</summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     /// <summary>Non-null when the source is missing on disk or failed to load (shown in the header).</summary>
     [ObservableProperty]
     private string? _problem;

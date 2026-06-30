@@ -96,6 +96,12 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _restoreSourcesOnStartup;
 
+    /// <summary>Free-text filter applied to the sources/projects/profiles/scripts tree.</summary>
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value) => ApplyFilter();
+
     [ObservableProperty]
     private string _updateRepository = string.Empty;
 
@@ -218,6 +224,8 @@ public partial class MainWindowViewModel : ObservableObject
             IsLoading = false;
             OnPropertyChanged(nameof(SelectedCount));
             OnPropertyChanged(nameof(HasSources));
+            if (FilterText.Length > 0)
+                ApplyFilter();
         }
     }
 
@@ -312,6 +320,8 @@ public partial class MainWindowViewModel : ObservableObject
             IsLoading = false;
             OnPropertyChanged(nameof(SelectedCount));
             OnPropertyChanged(nameof(HasSources));
+            if (FilterText.Length > 0)
+                ApplyFilter();
         }
     }
 
@@ -479,6 +489,53 @@ public partial class MainWindowViewModel : ObservableObject
 
         OnPropertyChanged(nameof(SelectedCount));
         SaveCurrentSelection();
+    }
+
+    // ---- Filtering --------------------------------------------------------
+
+    /// <summary>
+    /// Applies <see cref="FilterText"/> across the tree: an item stays visible if it (or a relevant
+    /// ancestor/descendant) matches. Matching parents expand so results are visible.
+    /// </summary>
+    private void ApplyFilter()
+    {
+        var filter = FilterText?.Trim() ?? string.Empty;
+        var noFilter = filter.Length == 0;
+        bool Match(string? text) => text is not null && text.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+        foreach (var source in Sources)
+        {
+            var sourceMatch = Match(source.Name) || Match(source.Path);
+            var anyProjectVisible = false;
+
+            foreach (var project in source.Projects)
+            {
+                var projectMatch = sourceMatch || Match(project.Name);
+                var anyChildVisible = false;
+
+                foreach (var profile in project.Profiles)
+                {
+                    profile.IsVisible = noFilter || projectMatch ||
+                        Match(profile.Name) || Match(profile.Target) || Match(profile.Method);
+                    anyChildVisible |= profile.IsVisible;
+                }
+
+                foreach (var script in project.ScriptTargets)
+                {
+                    script.IsVisible = noFilter || projectMatch || Match(script.Name) || Match(script.ScriptPath);
+                    anyChildVisible |= script.IsVisible;
+                }
+
+                project.IsVisible = noFilter || projectMatch || anyChildVisible;
+                if (!noFilter && project.IsVisible)
+                    project.IsExpanded = true;
+                anyProjectVisible |= project.IsVisible;
+            }
+
+            source.IsVisible = noFilter || sourceMatch || anyProjectVisible;
+            if (!noFilter && source.IsVisible)
+                source.IsExpanded = true;
+        }
     }
 
     // ---- Deployment -------------------------------------------------------
@@ -791,6 +848,8 @@ public partial class MainWindowViewModel : ObservableObject
             IsLoading = false;
             OnPropertyChanged(nameof(SelectedCount));
             OnPropertyChanged(nameof(HasSources));
+            if (FilterText.Length > 0)
+                ApplyFilter();
         }
     }
 

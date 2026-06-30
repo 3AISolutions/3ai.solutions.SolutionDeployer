@@ -80,6 +80,10 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
     [NotifyPropertyChangedFor(nameof(StatusGlyph))]
     private PublishStatus _status = PublishStatus.Pending;
 
+    /// <summary>False when hidden by the active filter.</summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     [ObservableProperty]
     private bool _isSelected;
 
