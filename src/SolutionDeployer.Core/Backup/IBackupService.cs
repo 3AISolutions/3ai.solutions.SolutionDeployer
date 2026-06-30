@@ -23,8 +23,9 @@ public interface IBackupService
     /// </summary>
     Task<DeploymentBackup?> BackUpAsync(PublishJob job, Action<OutputLine> onOutput, CancellationToken cancellationToken = default);
 
-    /// <summary>Lists existing snapshots for a profile, newest first.</summary>
-    IReadOnlyList<DeploymentBackup> List(PublishProfile profile, string projectDirectory);
+    /// <summary>Lists existing snapshots for a profile (from its configured destination), newest first.</summary>
+    Task<IReadOnlyList<DeploymentBackup>> ListAsync(
+        PublishProfile profile, string projectDirectory, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Restores a previously-captured snapshot to its original target. MSDeploy restores require
@@ -39,6 +40,6 @@ public interface IBackupService
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes a snapshot (zip + manifest). Returns false if it could not be removed.</summary>
-    bool Delete(DeploymentBackup backup);
+    /// <summary>Deletes a snapshot (package + manifest). Returns false if it could not be removed.</summary>
+    Task<bool> DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default);
 }

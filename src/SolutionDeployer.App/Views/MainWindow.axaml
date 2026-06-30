@@ -61,6 +61,10 @@
                                     <TextBlock Text="ON STARTUP" FontSize="10" FontWeight="SemiBold" Opacity="0.6" />
                                     <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
                                               ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
+                                    <Separator Margin="0,2" />
+                                    <Button Content="Backup destinations…" HorizontalAlignment="Stretch"
+                                            Command="{Binding ManageBackupTargetsCommand}"
+                                            ToolTip.Tip="Configure S3-compatible remotes for storing snapshots" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>
@@ -192,6 +196,10 @@
                                                         <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
                                                                     Orientation="Horizontal" Spacing="6" Margin="0,3,0,0"
                                                                     IsVisible="{Binding ShowBackups}">
+                                                            <TextBlock Text="Store:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
+                                                            <ComboBox ItemsSource="{Binding BackupDestinations}" SelectedItem="{Binding SelectedDestination, Mode=TwoWay}"
+                                                                      MinWidth="120" FontSize="11"
+                                                                      ToolTip.Tip="Where this profile's snapshots are stored (local disk or a configured remote)" />
                                                             <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
                                                             <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
                                                                       MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">

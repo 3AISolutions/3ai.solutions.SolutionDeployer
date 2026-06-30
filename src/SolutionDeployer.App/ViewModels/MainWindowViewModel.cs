@@ -26,6 +26,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IDeployConfirmationService _confirmationService;
     private readonly IGitHistoryService _gitHistory;
     private readonly IReleaseSummaryService _releaseSummary;
+    private readonly IRemoteTargetsService _remoteTargets;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -44,7 +45,8 @@ public partial class MainWindowViewModel : ObservableObject
         IBackupService backupService,
         IDeployConfirmationService confirmationService,
         IGitHistoryService gitHistory,
-        IReleaseSummaryService releaseSummary)
+        IReleaseSummaryService releaseSummary,
+        IRemoteTargetsService remoteTargets)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -58,6 +60,7 @@ public partial class MainWindowViewModel : ObservableObject
         _confirmationService = confirmationService;
         _gitHistory = gitHistory;
         _releaseSummary = releaseSummary;
+        _remoteTargets = remoteTargets;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -358,7 +361,12 @@ public partial class MainWindowViewModel : ObservableObject
                     var profileVm = new ProfileViewModel(
                         projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
                     profileVm.SupportsBackup = _backupService.CanBackUp(profile, project.ProjectDirectory, out _);
-                    LoadBackups(profileVm);
+                    if (profileVm.SupportsBackup)
+                    {
+                        profileVm.SetDestinations(BuildDestinationOptions(), _settings.GetBackupTargetId(profile.FilePath));
+                        profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
+                        _ = LoadBackupsAsync(profileVm); // fire-and-forget so a remote listing never blocks load
+                    }
                     projectVm.Profiles.Add(profileVm);
                 }
 
@@ -683,7 +691,7 @@ public partial class MainWindowViewModel : ObservableObject
             // A backup taken during the run produces a new snapshot — refresh the restore lists.
             if (BackupBeforePublish)
                 foreach (var profileVm in selectedProfiles)
-                    LoadBackups(profileVm);
+                    _ = LoadBackupsAsync(profileVm);
 
             // Record/log the git history for profiles that deployed successfully (informative only).
             var succeeded = results
@@ -721,24 +729,65 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ---- Backup / restore -------------------------------------------------
 
-    /// <summary>Repopulates a profile's snapshot list from disk.</summary>
-    private void LoadBackups(ProfileViewModel profileVm)
+    /// <summary>
+    /// Repopulates a profile's snapshot list from its configured destination. Best-effort: a remote
+    /// (S3) listing may fail or be slow, so callers fire-and-forget and errors surface in the badge.
+    /// </summary>
+    private async Task LoadBackupsAsync(ProfileViewModel profileVm)
     {
         if (!profileVm.SupportsBackup)
             return;
 
-        var projectDir = profileVm.Parent.Project.ProjectDirectory;
-        var entries = _backupService
-            .List(profileVm.Profile, projectDir)
-            .Select(b => new BackupEntryViewModel(profileVm, b));
-        profileVm.SetBackups(entries);
+        try
+        {
+            var projectDir = profileVm.Parent.Project.ProjectDirectory;
+            var backups = await _backupService.ListAsync(profileVm.Profile, projectDir);
+            profileVm.SetBackups(backups.Select(b => new BackupEntryViewModel(profileVm, b)));
+        }
+        catch (Exception ex)
+        {
+            profileVm.SetBackups([]);
+            StatusMessage = $"Could not list snapshots for {profileVm.Name}: {ex.Message}";
+        }
     }
 
     [RelayCommand]
-    private void RefreshBackups(ProfileViewModel? profile)
+    private async Task RefreshBackupsAsync(ProfileViewModel? profile)
     {
         if (profile is not null)
-            LoadBackups(profile);
+            await LoadBackupsAsync(profile);
+    }
+
+    private List<BackupDestinationOption> BuildDestinationOptions()
+    {
+        var options = new List<BackupDestinationOption> { new(S3BackupTarget.LocalId, "Local disk") };
+        options.AddRange(_settings.RemoteBackupTargets.Select(t => new BackupDestinationOption(t.Id, t.ToString())));
+        return options;
+    }
+
+    private void OnBackupDestinationChanged(ProfileViewModel profileVm)
+    {
+        var id = profileVm.SelectedDestination?.Id ?? S3BackupTarget.LocalId;
+        _settings.SetBackupTargetId(profileVm.Profile.FilePath, id);
+        _settingsStore.Save(_settings);
+        StatusMessage = $"{profileVm.Name} backups → {profileVm.SelectedDestination?.Name ?? "Local disk"}.";
+        _ = LoadBackupsAsync(profileVm);
+    }
+
+    /// <summary>Re-populates every profile's destination picker after the remote list changes.</summary>
+    private void RefreshAllBackupDestinations()
+    {
+        var options = BuildDestinationOptions();
+        foreach (var profileVm in Sources.SelectMany(s => s.Projects).SelectMany(p => p.Profiles).Where(p => p.SupportsBackup))
+            profileVm.SetDestinations(options, _settings.GetBackupTargetId(profileVm.Profile.FilePath));
+    }
+
+    [RelayCommand]
+    private async Task ManageBackupTargetsAsync()
+    {
+        await _remoteTargets.ShowAsync(_settings);
+        // The user may have added/removed remotes — refresh the per-profile pickers.
+        RefreshAllBackupDestinations();
     }
 
     [RelayCommand(CanExecute = nameof(CanDeploy))]
@@ -749,15 +798,6 @@ public partial class MainWindowViewModel : ObservableObject
 
         var profileVm = entry.Parent;
         var projectDir = profileVm.Parent.Project.ProjectDirectory;
-
-        // The snapshot may have been deleted on disk since the list was loaded.
-        if (!File.Exists(entry.Backup.PackagePath))
-        {
-            StatusMessage = "That snapshot is no longer on disk — refreshed the list.";
-            Log.Add(LogLine.System($"ERROR: snapshot package not found: {entry.Backup.PackagePath}"));
-            LoadBackups(profileVm);
-            return;
-        }
 
         IsRunning = true;
         _runCts = new CancellationTokenSource();
@@ -800,13 +840,13 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanDeploy))]
-    private void DeleteBackup(BackupEntryViewModel? entry)
+    private async Task DeleteBackupAsync(BackupEntryViewModel? entry)
     {
         if (entry is null)
             return;
 
         var profileVm = entry.Parent;
-        if (_backupService.Delete(entry.Backup))
+        if (await _backupService.DeleteAsync(entry.Backup))
         {
             Log.Add(LogLine.System($"Deleted snapshot {entry.Backup.DisplayName} for {profileVm.Name}."));
             StatusMessage = $"Deleted snapshot for {profileVm.Name}.";
@@ -816,7 +856,7 @@ public partial class MainWindowViewModel : ObservableObject
             StatusMessage = "Could not delete that snapshot.";
         }
 
-        LoadBackups(profileVm);
+        await LoadBackupsAsync(profileVm);
     }
 
     // ---- Release summary (git history) ------------------------------------

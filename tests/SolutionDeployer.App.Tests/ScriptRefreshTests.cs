@@ -45,16 +45,17 @@ public sealed class ScriptRefreshTests : IDisposable
             new MsBuildPublishEngine(processRunner, new MsBuildLocator()),
             new ScriptPublishEngine(processRunner),
         });
-        var backupService = new BackupService(
-            processRunner, new MsDeployLocator(), rootOverride: Path.Combine(_tempDir, "Backups"));
-        var runner = new DeploymentRunner(engineFactory, backupService);
         var settings = new SettingsStore(_settingsPath);
+        var storeProvider = new BackupStoreProvider(settings, new NullCredentialStore(),
+            localRootOverride: Path.Combine(_tempDir, "Backups"));
+        var backupService = new BackupService(processRunner, new MsDeployLocator(), storeProvider);
+        var runner = new DeploymentRunner(engineFactory, backupService);
         var editor = new FakeScriptEditor();
 
         var vm = new MainWindowViewModel(
             sourceLoader, runner, engineFactory, settings,
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
-            new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary());
+            new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets());
 
         return (vm, editor);
     }

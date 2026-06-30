@@ -55,3 +55,9 @@ public sealed class FakeReleaseSummary : IReleaseSummaryService
 {
     public Task ShowAsync(ReleaseSummary summary) => Task.CompletedTask;
 }
+
+/// <summary>Remote-targets manager stub; never opens a window.</summary>
+public sealed class FakeRemoteTargets : IRemoteTargetsService
+{
+    public Task ShowAsync(SolutionDeployer.Core.Configuration.AppSettings settings) => Task.CompletedTask;
+}

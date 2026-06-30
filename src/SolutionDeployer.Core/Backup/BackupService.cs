@@ -1,50 +1,34 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
 
 namespace SolutionDeployer.Core.Backup;
 
 /// <summary>
-/// Snapshots deployment targets to local zip packages. MSDeploy targets are pulled/pushed with
-/// <c>msdeploy.exe</c> (Web Deploy is bidirectional); FileSystem targets are zipped/extracted directly.
-/// Passwords are redacted in every logged command line and never written to a manifest.
+/// Snapshots deployment targets to zip packages, then hands them to the <see cref="IBackupStore"/>
+/// the profile is configured to use (local disk or an S3-compatible bucket). MSDeploy targets are
+/// pulled/pushed with <c>msdeploy.exe</c> (Web Deploy is bidirectional); FileSystem targets are
+/// zipped/extracted directly. Passwords are redacted in every logged command line and never stored.
 /// </summary>
-public sealed class BackupService : IBackupService
+public sealed class BackupService(
+    ProcessRunner processRunner,
+    MsDeployLocator msDeployLocator,
+    IBackupStoreProvider storeProvider,
+    int retention = 10) : IBackupService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
-    private readonly ProcessRunner _processRunner;
-    private readonly MsDeployLocator _msDeployLocator;
-    private readonly string _root;
-    private readonly int _retention;
-
-    public BackupService(
-        ProcessRunner processRunner,
-        MsDeployLocator msDeployLocator,
-        string? rootOverride = null,
-        int retention = 10)
-    {
-        _processRunner = processRunner;
-        _msDeployLocator = msDeployLocator;
-        _retention = Math.Max(1, retention);
-        _root = rootOverride ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "3ai.SolutionDeployer",
-            "Backups");
-    }
+    private readonly int _retention = Math.Max(1, retention);
 
     public bool CanBackUp(PublishProfile profile, string projectDirectory, out string? reason)
     {
         var target = ResolveTarget(profile, projectDirectory);
         switch (target)
         {
-            case MsDeployTarget when !_msDeployLocator.IsSupported:
+            case MsDeployTarget when !msDeployLocator.IsSupported:
                 reason = "MSDeploy backups require msdeploy.exe, which is only available on Windows.";
                 return false;
-            case MsDeployTarget when _msDeployLocator.Locate() is null:
+            case MsDeployTarget when msDeployLocator.Locate() is null:
                 reason = "Could not locate msdeploy.exe. Install Web Deploy (the IIS \"Microsoft Web Deploy\" component).";
                 return false;
             case MsDeployTarget:
@@ -69,93 +53,80 @@ public sealed class BackupService : IBackupService
             ?? throw new InvalidOperationException(
                 $"Profile '{profile.Name}' ({profile.WebPublishMethod ?? "unknown"}) cannot be backed up.");
 
-        var folder = EnsureProfileFolder(profile);
-        var createdUtc = DateTimeOffset.UtcNow;
-        var sequence = NextSequence(folder);
-        var id = Guid.NewGuid().ToString("N");
-        // Sequence keeps the file name unique even for several snapshots within the same second.
-        var packagePath = Path.Combine(folder, $"{createdUtc:yyyyMMdd-HHmmss}_{sequence:D6}_{id[..8]}.zip");
+        var store = storeProvider.ForProfile(profile);
+        var profileKey = KeyFor(profile);
+        var existing = await store.ListAsync(profileKey, cancellationToken).ConfigureAwait(false);
 
-        onOutput(OutputLine.Info($"[backup] Capturing current deployment of '{profile.Name}' …"));
+        var createdUtc = DateTimeOffset.UtcNow;
+        var sequence = existing.Count == 0 ? 1 : existing.Max(b => b.Sequence) + 1;
+        var id = Guid.NewGuid().ToString("N");
+        var fileName = $"{createdUtc:yyyyMMdd-HHmmss}_{sequence:D6}_{id[..8]}.zip";
+        var tempPackage = Path.Combine(Path.GetTempPath(), $"sd_backup_{id}.zip");
+
+        onOutput(OutputLine.Info($"[backup] Capturing current deployment of '{profile.Name}' → {store.Description} …"));
 
         bool captured;
         try
         {
             captured = target switch
             {
-                FileSystemTarget fs => await Task.Run(() => BackUpFileSystem(fs, packagePath, onOutput), cancellationToken)
+                FileSystemTarget fs => await Task.Run(() => BackUpFileSystem(fs, tempPackage, onOutput), cancellationToken)
                     .ConfigureAwait(false),
-                MsDeployTarget md => await BackUpMsDeployAsync(md, job, packagePath, onOutput, cancellationToken)
+                MsDeployTarget md => await BackUpMsDeployAsync(md, job, tempPackage, onOutput, cancellationToken)
                     .ConfigureAwait(false),
                 _ => false,
             };
+
+            if (!captured)
+            {
+                onOutput(OutputLine.Info("[backup] Nothing to back up (no existing deployment found)."));
+                return null;
+            }
+
+            var previous = existing.FirstOrDefault();
+            var contentHash = ComputeContentFingerprint(tempPackage);
+
+            var backup = new DeploymentBackup
+            {
+                Id = id,
+                ProfileKey = profileKey,
+                ProfileName = profile.Name,
+                ProjectName = job.Project.Name,
+                Kind = target is MsDeployTarget ? BackupKind.MsDeploy : BackupKind.FileSystem,
+                CreatedUtc = createdUtc,
+                Sequence = sequence,
+                StorageTargetId = store.TargetId,
+                PackagePath = store.ResolveKey(profileKey, fileName),
+                SizeBytes = new FileInfo(tempPackage).Length,
+                Target = target.DisplayTarget,
+                ContentHash = contentHash,
+            };
+
+            await store.SaveAsync(backup, tempPackage, cancellationToken).ConfigureAwait(false);
+            onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}) to {store.Description}."));
+
+            if (previous?.ContentHash is { } priorHash && priorHash == contentHash)
+            {
+                onOutput(OutputLine.Info(
+                    $"[backup] NOTE: this snapshot is identical to snapshot #{previous.Sequence} — the deployed " +
+                    "content has not changed since then (nothing new was deployed)."));
+            }
+
+            await PruneAsync(store, profileKey, onOutput, cancellationToken).ConfigureAwait(false);
+            return backup;
         }
-        catch (OperationCanceledException)
+        finally
         {
-            TryDeleteFile(packagePath);
-            throw;
+            TryDeleteFile(tempPackage);
         }
-
-        if (!captured)
-        {
-            TryDeleteFile(packagePath);
-            onOutput(OutputLine.Info("[backup] Nothing to back up (no existing deployment found)."));
-            return null;
-        }
-
-        // Compare against the newest prior snapshot (this one isn't written yet) to detect a no-op deploy.
-        var previous = ReadAll(folder).FirstOrDefault();
-        var contentHash = ComputeContentFingerprint(packagePath);
-
-        var backup = new DeploymentBackup
-        {
-            Id = id,
-            ProfileKey = KeyFor(profile),
-            ProfileName = profile.Name,
-            ProjectName = job.Project.Name,
-            Kind = target is MsDeployTarget ? BackupKind.MsDeploy : BackupKind.FileSystem,
-            CreatedUtc = createdUtc,
-            Sequence = sequence,
-            PackagePath = packagePath,
-            SizeBytes = new FileInfo(packagePath).Length,
-            Target = target.DisplayTarget,
-            ContentHash = contentHash,
-        };
-
-        WriteManifest(backup);
-        onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}) → {Path.GetFileName(packagePath)}"));
-
-        if (previous?.ContentHash is { } priorHash && priorHash == contentHash)
-        {
-            onOutput(OutputLine.Info(
-                $"[backup] NOTE: this snapshot is identical to snapshot #{previous.Sequence} — the deployed " +
-                "content has not changed since then (nothing new was deployed)."));
-        }
-
-        Prune(folder, onOutput);
-        return backup;
     }
 
-    public IReadOnlyList<DeploymentBackup> List(PublishProfile profile, string projectDirectory)
+    public async Task<IReadOnlyList<DeploymentBackup>> ListAsync(
+        PublishProfile profile, string projectDirectory, CancellationToken cancellationToken = default)
     {
-        var folder = Path.Combine(_root, KeyFor(profile));
-        if (!Directory.Exists(folder))
-            return [];
-
-        return ReadAll(folder).Where(b => File.Exists(b.PackagePath)).ToList();
+        var store = storeProvider.ForProfile(profile);
+        return await store.ListAsync(KeyFor(profile), cancellationToken).ConfigureAwait(false);
     }
-
-    /// <summary>All snapshots in a folder, newest first. Ordering is total and stable: by sequence,
-    /// then timestamp, then id — so same-second snapshots never sort arbitrarily.</summary>
-    private static List<DeploymentBackup> ReadAll(string folder) =>
-        Directory.EnumerateFiles(folder, "*.json")
-            .Select(ReadManifest)
-            .Where(b => b is not null)
-            .Select(b => b!)
-            .OrderByDescending(b => b.Sequence)
-            .ThenByDescending(b => b.CreatedUtc)
-            .ThenBy(b => b.Id, StringComparer.Ordinal)
-            .ToList();
 
     public async Task RestoreAsync(
         DeploymentBackup backup,
@@ -166,42 +137,58 @@ public sealed class BackupService : IBackupService
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(backup.PackagePath))
-            throw new FileNotFoundException($"Backup package not found: {backup.PackagePath}");
-
         var target = ResolveTarget(profile, projectDirectory)
             ?? throw new InvalidOperationException($"Profile '{profile.Name}' cannot be restored to.");
 
+        var store = storeProvider.ForTargetId(backup.StorageTargetId);
         onOutput(OutputLine.Info(
             $"[restore] Restoring snapshot #{backup.Sequence} from {backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} " +
-            $"({backup.SizeText}, {Path.GetFileName(backup.PackagePath)}) to '{profile.Name}' …"));
+            $"({backup.SizeText}, from {store.Description}) to '{profile.Name}' …"));
 
-        switch (target)
+        var download = await store.DownloadAsync(backup, cancellationToken).ConfigureAwait(false);
+        try
         {
-            case FileSystemTarget fs:
-                await Task.Run(() => RestoreFileSystem(fs, backup.PackagePath, onOutput), cancellationToken)
-                    .ConfigureAwait(false);
-                break;
-            case MsDeployTarget md:
-                await RestoreMsDeployAsync(md, backup.PackagePath, credentials, allowUntrustedCertificate, onOutput, cancellationToken)
-                    .ConfigureAwait(false);
-                break;
+            switch (target)
+            {
+                case FileSystemTarget fs:
+                    await Task.Run(() => RestoreFileSystem(fs, download.LocalPath, onOutput), cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                case MsDeployTarget md:
+                    await RestoreMsDeployAsync(md, download.LocalPath, credentials, allowUntrustedCertificate, onOutput, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+            }
+        }
+        finally
+        {
+            if (download.IsTemporary)
+                TryDeleteFile(download.LocalPath);
         }
 
         onOutput(OutputLine.Info("[restore] Done."));
     }
 
-    public bool Delete(DeploymentBackup backup)
+    public async Task<bool> DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default)
     {
         try
         {
-            TryDeleteFile(backup.PackagePath);
-            TryDeleteFile(ManifestPath(backup));
+            await storeProvider.ForTargetId(backup.StorageTargetId).DeleteAsync(backup, cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch
         {
             return false;
+        }
+    }
+
+    private async Task PruneAsync(IBackupStore store, string profileKey, Action<OutputLine> onOutput, CancellationToken cancellationToken)
+    {
+        var all = await store.ListAsync(profileKey, cancellationToken).ConfigureAwait(false);
+        foreach (var stale in all.Skip(_retention))
+        {
+            await store.DeleteAsync(stale, cancellationToken).ConfigureAwait(false);
+            onOutput(OutputLine.Info($"[backup] Pruned old snapshot from {stale.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}."));
         }
     }
 
@@ -285,11 +272,11 @@ public sealed class BackupService : IBackupService
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken)
     {
-        var msdeploy = _msDeployLocator.Locate()
+        var msdeploy = msDeployLocator.Locate()
             ?? throw new InvalidOperationException("msdeploy.exe not found.");
 
         onOutput(OutputLine.Info($"$ \"{msdeploy}\" {redactedCommandLine}"));
-        var result = await _processRunner
+        var result = await processRunner
             .RunAsync(msdeploy, args, workingDirectory: null, onOutput, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return result.ExitCode;
@@ -332,8 +319,6 @@ public sealed class BackupService : IBackupService
         bool allowUntrusted,
         IReadOnlyList<string>? extraFlags = null)
     {
-        // source/dest may already be a full "-source:package=…" token, or just a provider body that
-        // still needs its "-source:"/"-dest:" prefix. Normalise both forms.
         var sourceArg = source.Arg.StartsWith('-') ? source.Arg : $"-source:{source.Arg}";
         var sourceRedacted = source.Redacted.StartsWith('-') ? source.Redacted : $"-source:{source.Redacted}";
         var destArg = dest.Arg.StartsWith('-') ? dest.Arg : $"-dest:{dest.Arg}";
@@ -411,20 +396,13 @@ public sealed class BackupService : IBackupService
         return serviceUrl;
     }
 
-    // ---- Storage ----------------------------------------------------------
+    // ---- Helpers ----------------------------------------------------------
 
     private static string KeyFor(PublishProfile profile)
     {
         var hash = Convert.ToHexStringLower(
             SHA256.HashData(Encoding.UTF8.GetBytes(profile.FilePath.ToLowerInvariant())))[..8];
         return $"{Sanitize(profile.Name)}_{hash}";
-    }
-
-    private string EnsureProfileFolder(PublishProfile profile)
-    {
-        var folder = Path.Combine(_root, KeyFor(profile));
-        Directory.CreateDirectory(folder);
-        return folder;
     }
 
     private static string Sanitize(string name)
@@ -439,8 +417,7 @@ public sealed class BackupService : IBackupService
 
     /// <summary>
     /// A stable fingerprint of the captured payload: SHA-256 over each content entry's name and
-    /// uncompressed size, sorted, ignoring volatile package metadata. Two snapshots with the same
-    /// fingerprint contain the same deployed content even though their zip bytes differ.
+    /// uncompressed size, sorted, ignoring volatile package metadata.
     /// </summary>
     private static string ComputeContentFingerprint(string zipPath)
     {
@@ -454,46 +431,6 @@ public sealed class BackupService : IBackupService
         }
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
-    }
-
-    private static string ManifestPath(DeploymentBackup backup) =>
-        Path.ChangeExtension(backup.PackagePath, ".json");
-
-    private static void WriteManifest(DeploymentBackup backup) =>
-        File.WriteAllText(ManifestPath(backup), JsonSerializer.Serialize(backup, JsonOptions));
-
-    private static DeploymentBackup? ReadManifest(string path)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<DeploymentBackup>(File.ReadAllText(path));
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private void Prune(string folder, Action<OutputLine> onOutput)
-    {
-        foreach (var stale in ReadAll(folder).Skip(_retention))
-        {
-            Delete(stale);
-            onOutput(OutputLine.Info($"[backup] Pruned old snapshot from {stale.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}."));
-        }
-    }
-
-    /// <summary>Next monotonic sequence for a profile folder: one more than the highest seen so far
-    /// (pruning never lowers it, so sequences stay strictly increasing across the profile's lifetime).</summary>
-    private static long NextSequence(string folder)
-    {
-        var manifests = Directory.EnumerateFiles(folder, "*.json")
-            .Select(ReadManifest)
-            .Where(b => b is not null)
-            .Select(b => b!.Sequence)
-            .DefaultIfEmpty(0)
-            .Max();
-        return manifests + 1;
     }
 
     private static void TryDeleteFile(string path)
