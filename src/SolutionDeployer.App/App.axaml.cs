@@ -26,6 +26,7 @@ public partial class App : Application
             services.AddSingleton<IFilePickerService, FilePickerService>();
             services.AddSingleton<IScriptEditorService, ScriptEditorService>();
             services.AddSingleton<IDeployConfirmationService, DeployConfirmationService>();
+            services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<UpdateService>();
             services.AddSingleton<MainWindowViewModel>();
 

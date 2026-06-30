@@ -22,6 +22,12 @@ public sealed class AppSettings
     /// <summary>How many snapshots to keep per profile before the oldest are pruned.</summary>
     public int BackupRetention { get; set; } = 10;
 
+    /// <summary>
+    /// Per-profile record of the git commit SHAs deployed last time, keyed by profile file path. Used
+    /// to summarise what changed since the previous deployment.
+    /// </summary>
+    public Dictionary<string, DeployRecord> DeployHistory { get; set; } = new();
+
     /// <summary>Remembered usernames keyed by profile file path (no passwords).</summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
