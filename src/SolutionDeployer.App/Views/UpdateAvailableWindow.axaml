@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.UpdateAvailableWindow"
+        x:DataType="vm:UpdateAvailableViewModel"
+        Title="Update available"
+        Width="520" Height="440" MinWidth="420" MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <TextBlock DockPanel.Dock="Top" Text="What's new" FontWeight="SemiBold" Opacity="0.7" FontSize="12" Margin="0,0,0,6" />
+
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+            <Button Grid.Column="1" Content="Later" Command="{Binding LaterCommand}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Update now" Command="{Binding UpdateNowCommand}" Classes="accent" IsDefault="True" />
+        </Grid>
+
+        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+            <ScrollViewer>
+                <SelectableTextBlock Text="{Binding Notes}" TextWrapping="Wrap"
+                                     FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12" />
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

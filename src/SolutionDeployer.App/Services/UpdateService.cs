@@ -4,7 +4,7 @@ using Velopack.Sources;
 
 namespace SolutionDeployer.App.Services;
 
-public sealed record UpdateCheckResult(bool UpdateAvailable, string? Version, string Message);
+public sealed record UpdateCheckResult(bool UpdateAvailable, string? Version, string Message, string? Notes = null);
 
 /// <summary>
 /// Wraps Velopack to check for, download, and apply updates published to GitHub Releases.
@@ -22,7 +22,11 @@ public sealed class UpdateService
         if (info is null)
             return new UpdateCheckResult(false, mgr.CurrentVersion?.ToString(), "You are on the latest version.");
 
-        return new UpdateCheckResult(true, info.TargetFullRelease.Version.ToString(), $"Update available: {info.TargetFullRelease.Version}");
+        return new UpdateCheckResult(
+            true,
+            info.TargetFullRelease.Version.ToString(),
+            $"Update available: {info.TargetFullRelease.Version}",
+            Notes: info.TargetFullRelease.NotesMarkdown);
     }
 
     /// <summary>
