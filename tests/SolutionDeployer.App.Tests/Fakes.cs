@@ -69,3 +69,21 @@ public sealed class FakeUpdatePrompt : IUpdatePromptService
 
     public Task<bool> ConfirmUpdateAsync(string? version, string? notes) => Task.FromResult(Next);
 }
+
+/// <summary>What's-new stub; never opens a window and reports no notes.</summary>
+public sealed class FakeWhatsNew : IWhatsNewService
+{
+    public int ShownCount { get; private set; }
+
+    public Task<string?> GetNotesForCurrentVersionAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
+    public Task<string?> GetNotesForCurrentVersionAsync(string repository, CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
+    public Task<bool> ShowAsync(string? notes = null)
+    {
+        ShownCount++;
+        return Task.FromResult(true);
+    }
+}

@@ -28,6 +28,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IReleaseSummaryService _releaseSummary;
     private readonly IRemoteTargetsService _remoteTargets;
     private readonly IUpdatePromptService _updatePrompt;
+    private readonly IWhatsNewService _whatsNew;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -48,7 +49,8 @@ public partial class MainWindowViewModel : ObservableObject
         IGitHistoryService gitHistory,
         IReleaseSummaryService releaseSummary,
         IRemoteTargetsService remoteTargets,
-        IUpdatePromptService updatePrompt)
+        IUpdatePromptService updatePrompt,
+        IWhatsNewService whatsNew)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -64,6 +66,7 @@ public partial class MainWindowViewModel : ObservableObject
         _releaseSummary = releaseSummary;
         _remoteTargets = remoteTargets;
         _updatePrompt = updatePrompt;
+        _whatsNew = whatsNew;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -172,6 +175,12 @@ public partial class MainWindowViewModel : ObservableObject
             return v is null ? string.Empty : $"v{v.Major}.{v.Minor}.{v.Build}";
         }
     }
+
+    /// <summary>Semver string of the running build (Major.Minor.Build), or null when unresolved.</summary>
+    private static string? CurrentVersionString =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v
+            ? $"{v.Major}.{v.Minor}.{v.Build}"
+            : null;
 
     public int SelectedCount =>
         Sources.SelectMany(s => s.Projects)
@@ -1020,6 +1029,32 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>Reopens the "what's new" dialog on demand (toolbar button).</summary>
+    [RelayCommand]
+    private async Task ShowWhatsNewAsync()
+    {
+        try
+        {
+            await _whatsNew.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not load release notes: {ex.Message}";
+        }
+        finally
+        {
+            // Mark the running version as seen even when opened manually, so a later startup won't
+            // re-show it automatically.
+            var current = CurrentVersionString;
+            if (!string.IsNullOrEmpty(current) &&
+                !string.Equals(_settings.LastSeenWhatsNewVersion, current, StringComparison.Ordinal))
+            {
+                _settings.LastSeenWhatsNewVersion = current;
+                _settingsStore.Save(_settings);
+            }
+        }
+    }
+
     public async Task RunStartupUpdateCheckAsync()
     {
         if (_settings.CheckForUpdatesOnStartup &&
@@ -1027,6 +1062,36 @@ public partial class MainWindowViewModel : ObservableObject
             !UpdateRepository.StartsWith("OWNER/", StringComparison.OrdinalIgnoreCase))
         {
             await CheckForUpdatesAsync();
+        }
+    }
+
+    /// <summary>
+    /// On first launch of a new version, pops up the "what's new" changelog (the release notes
+    /// published to GitHub for the running tag). Subsequent launches of the same version stay quiet.
+    /// Best-effort: if notes can't be fetched, the version is still marked seen so we don't retry
+    /// every launch.
+    /// </summary>
+    public async Task RunStartupWhatsNewCheckAsync()
+    {
+        var current = CurrentVersionString;
+        if (string.IsNullOrEmpty(current))
+            return;
+
+        if (string.Equals(_settings.LastSeenWhatsNewVersion, current, StringComparison.Ordinal))
+            return;
+
+        try
+        {
+            await _whatsNew.ShowAsync();
+        }
+        catch
+        {
+            // Informative only — never block startup.
+        }
+        finally
+        {
+            _settings.LastSeenWhatsNewVersion = current;
+            _settingsStore.Save(_settings);
         }
     }
 }

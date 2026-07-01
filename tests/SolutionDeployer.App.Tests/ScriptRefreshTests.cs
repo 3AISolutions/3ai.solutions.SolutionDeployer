@@ -34,7 +34,7 @@ public sealed class ScriptRefreshTests : IDisposable
         _settingsPath = Path.Combine(_tempDir, "settings.json");
     }
 
-    private (MainWindowViewModel Vm, FakeScriptEditor Editor) CreateViewModel()
+    private (MainWindowViewModel Vm, FakeScriptEditor Editor, FakeWhatsNew WhatsNew) CreateViewModel()
     {
         var discovery = new ProfileDiscovery();
         var sourceLoader = new SourceLoader(new SolutionParser(discovery), new ProjectLoader(discovery));
@@ -51,20 +51,21 @@ public sealed class ScriptRefreshTests : IDisposable
         var backupService = new BackupService(processRunner, new MsDeployLocator(), storeProvider);
         var runner = new DeploymentRunner(engineFactory, backupService);
         var editor = new FakeScriptEditor();
+        var whatsNew = new FakeWhatsNew();
 
         var vm = new MainWindowViewModel(
             sourceLoader, runner, engineFactory, settings,
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
             new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
-            new FakeUpdatePrompt());
+            new FakeUpdatePrompt(), whatsNew);
 
-        return (vm, editor);
+        return (vm, editor, whatsNew);
     }
 
     [Fact]
     public async Task Manually_added_script_survives_a_refresh()
     {
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         await vm.OpenRecentCommand.ExecuteAsync(_solutionPath);
 
         var project = vm.Sources.Single().Projects.Single();
@@ -83,13 +84,13 @@ public sealed class ScriptRefreshTests : IDisposable
     [Fact]
     public async Task Manually_added_script_survives_an_app_restart()
     {
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         await vm.OpenRecentCommand.ExecuteAsync(_solutionPath);
         editor.Next = new ScriptTarget { Name = "Deploy", ScriptPath = "deploy.ps1" };
         await vm.AddScriptCommand.ExecuteAsync(vm.Sources.Single().Projects.Single());
 
         // Simulate a restart: a fresh view model loading the same settings file.
-        var (vm2, _) = CreateViewModel();
+        var (vm2, _, _) = CreateViewModel();
         await vm2.RunStartupLoadAsync();
 
         var project = vm2.Sources.Single().Projects.Single();
@@ -99,7 +100,7 @@ public sealed class ScriptRefreshTests : IDisposable
     [Fact]
     public async Task Script_on_directly_added_project_survives_refresh()
     {
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         var projectPath = Path.Combine(_tempDir, "WebApp", "WebApp.csproj");
         await vm.OpenRecentCommand.ExecuteAsync(projectPath); // .csproj => project source
 
@@ -121,7 +122,7 @@ public sealed class ScriptRefreshTests : IDisposable
         File.WriteAllText(projectPath,
             "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n");
 
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         await vm.OpenRecentCommand.ExecuteAsync(projectPath);
 
         editor.Next = new ScriptTarget { Name = "Deploy", ScriptPath = "deploy.ps1" };
@@ -136,7 +137,7 @@ public sealed class ScriptRefreshTests : IDisposable
     [Fact]
     public async Task Script_survives_refresh_when_project_is_in_two_sources()
     {
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         var projectPath = Path.Combine(_tempDir, "WebApp", "WebApp.csproj");
 
         // Same project added both via the solution and directly.
@@ -156,7 +157,7 @@ public sealed class ScriptRefreshTests : IDisposable
     [Fact]
     public async Task Editing_a_script_persists_across_refresh()
     {
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         await vm.OpenRecentCommand.ExecuteAsync(_solutionPath);
         var project = vm.Sources.Single().Projects.Single();
 
@@ -185,7 +186,7 @@ public sealed class ScriptRefreshTests : IDisposable
             "EndProject\n" +
             "Global\nEndGlobal\n");
 
-        var (vm, editor) = CreateViewModel();
+        var (vm, editor, _) = CreateViewModel();
         await vm.OpenRecentCommand.ExecuteAsync(slnPath);
 
         var project = vm.Sources.Single().Projects.Single();
@@ -196,6 +197,34 @@ public sealed class ScriptRefreshTests : IDisposable
         await vm.RefreshAllCommand.ExecuteAsync(null);
 
         Assert.Single(vm.Sources.Single().Projects.Single().ScriptTargets);
+    }
+
+    [Fact]
+    public async Task Whats_new_popup_shows_on_first_launch_but_not_again()
+    {
+        var (vm, _, whatsNew) = CreateViewModel();
+
+        await vm.RunStartupWhatsNewCheckAsync();
+        Assert.Equal(1, whatsNew.ShownCount);
+
+        // A second startup of the same version stays quiet.
+        var (vm2, _, whatsNew2) = CreateViewModel();
+        await vm2.RunStartupWhatsNewCheckAsync();
+        Assert.Equal(0, whatsNew2.ShownCount);
+    }
+
+    [Fact]
+    public async Task Whats_new_button_reopens_dialog_and_marks_seen()
+    {
+        var (vm, _, whatsNew) = CreateViewModel();
+
+        await vm.ShowWhatsNewCommand.ExecuteAsync(null);
+        Assert.Equal(1, whatsNew.ShownCount);
+
+        // After a manual open, a startup check for the same version no longer pops.
+        var (vm2, _, whatsNew2) = CreateViewModel();
+        await vm2.RunStartupWhatsNewCheckAsync();
+        Assert.Equal(0, whatsNew2.ShownCount);
     }
 
     public void Dispose()
