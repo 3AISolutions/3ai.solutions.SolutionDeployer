@@ -61,6 +61,12 @@ public sealed class AppSettings
     /// <summary>Automatically check for updates on startup.</summary>
     public bool CheckForUpdatesOnStartup { get; set; } = true;
 
+    /// <summary>
+    /// The app version whose "what's new" notes the user has already seen on first launch. When the
+    /// running version differs, the changelog popup is shown once, then this is updated.
+    /// </summary>
+    public string? LastSeenWhatsNewVersion { get; set; }
+
     /// <summary>The user-curated list of added items (solutions and standalone projects).</summary>
     public List<DeploymentSource> Sources { get; set; } = [];
 

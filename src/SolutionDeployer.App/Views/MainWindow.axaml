@@ -69,6 +69,8 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
+                    <Button Content="What's New" Command="{Binding ShowWhatsNewCommand}"
+                            ToolTip.Tip="Show the changelog for the current version" />
                     <Button Content="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
                 </StackPanel>
             </Grid>

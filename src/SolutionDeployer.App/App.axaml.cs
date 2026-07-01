@@ -6,6 +6,7 @@ using SolutionDeployer.App.Services;
 using SolutionDeployer.App.ViewModels;
 using SolutionDeployer.App.Views;
 using SolutionDeployer.Core;
+using SolutionDeployer.Core.WhatsNew;
 
 namespace SolutionDeployer.App;
 
@@ -29,6 +30,8 @@ public partial class App : Application
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
             services.AddSingleton<IUpdatePromptService, UpdatePromptService>();
+            services.AddSingleton<WhatsNewProvider>();
+            services.AddSingleton<IWhatsNewService, WhatsNewService>();
             services.AddSingleton<UpdateService>();
             services.AddSingleton<MainWindowViewModel>();
 
@@ -48,6 +51,7 @@ public partial class App : Application
     private static async Task StartupAsync(MainWindowViewModel viewModel)
     {
         await viewModel.RunStartupLoadAsync();
+        await viewModel.RunStartupWhatsNewCheckAsync();
         await viewModel.RunStartupUpdateCheckAsync();
     }
 }
