@@ -30,6 +30,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IUpdatePromptService _updatePrompt;
     private readonly IWhatsNewService _whatsNew;
     private readonly IDeploySummaryService _deploySummary;
+    private readonly IBackupManagerService _backupManager;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -52,7 +53,8 @@ public partial class MainWindowViewModel : ObservableObject
         IRemoteTargetsService remoteTargets,
         IUpdatePromptService updatePrompt,
         IWhatsNewService whatsNew,
-        IDeploySummaryService deploySummary)
+        IDeploySummaryService deploySummary,
+        IBackupManagerService backupManager)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -70,6 +72,7 @@ public partial class MainWindowViewModel : ObservableObject
         _updatePrompt = updatePrompt;
         _whatsNew = whatsNew;
         _deploySummary = deploySummary;
+        _backupManager = backupManager;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -91,6 +94,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -98,6 +102,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isRunning;
 
     [ObservableProperty]
@@ -255,9 +260,18 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RemoveSource(SourceViewModel? source)
+    private async Task RemoveSourceAsync(SourceViewModel? source)
     {
         if (source is null)
+            return;
+
+        var kind = source.Kind == SourceKind.Solution ? "solution" : "project";
+        var confirmed = await _confirmationService.ConfirmActionAsync(
+            $"Remove {source.Name}?",
+            $"The {kind} is removed from the list and its profile selections are forgotten. " +
+            "Nothing on disk is deleted, and you can add it again later.",
+            "Remove");
+        if (!confirmed)
             return;
 
         Sources.Remove(source);
@@ -319,9 +333,17 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RemoveScript(ScriptTargetViewModel? script)
+    private async Task RemoveScriptAsync(ScriptTargetViewModel? script)
     {
         if (script is null)
+            return;
+
+        var confirmed = await _confirmationService.ConfirmActionAsync(
+            $"Remove script {script.Name}?",
+            "The script deployment is removed from this project along with its saved password. " +
+            "The script file itself is not deleted.",
+            "Remove");
+        if (!confirmed)
             return;
 
         var project = script.Parent;
@@ -628,6 +650,14 @@ public partial class MainWindowViewModel : ObservableObject
                 ConfirmBeforeDeploy = false; // persisted via OnConfirmBeforeDeployChanged
         }
 
+        // Status dots show this run only: clear every row, then mark what's queued.
+        foreach (var target in projects.SelectMany(p => p.Profiles.Cast<ISelectableTarget>().Concat(p.ScriptTargets)))
+        {
+            target.Status = PublishStatus.Pending;
+            target.IsQueued = target.IsSelected;
+            target.ResultText = string.Empty;
+        }
+
         var jobsByTarget = new Dictionary<string, ISelectableTarget>();
         var jobs = new List<PublishJob>();
 
@@ -645,9 +675,6 @@ public partial class MainWindowViewModel : ObservableObject
             };
             jobs.Add(job);
             jobsByTarget[job.Id] = profileVm;
-
-            profileVm.Status = PublishStatus.Pending;
-            profileVm.ResultText = string.Empty;
 
             if (!string.IsNullOrWhiteSpace(profileVm.UserName))
                 _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
@@ -667,9 +694,6 @@ public partial class MainWindowViewModel : ObservableObject
             };
             jobs.Add(job);
             jobsByTarget[job.Id] = scriptVm;
-
-            scriptVm.Status = PublishStatus.Pending;
-            scriptVm.ResultText = string.Empty;
 
             if (scriptVm.RequiresCredentials)
             {
@@ -753,6 +777,11 @@ public partial class MainWindowViewModel : ObservableObject
             IsRunning = false;
             _runCts?.Dispose();
             _runCts = null;
+
+            // Anything that never reported a result (cancelled or aborted run) shouldn't stay "waiting".
+            // Real results are posted to the dispatcher and land after this, so they still win.
+            foreach (var target in jobsByTarget.Values.Where(t => t.Status is PublishStatus.Pending or PublishStatus.Running))
+                target.Status = PublishStatus.Cancelled;
         }
 
         if (summary is not null)
@@ -853,6 +882,17 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanDeploy))]
+    private async Task ManageBackupsAsync()
+    {
+        var hosts = AllBackupHosts().ToList();
+        if (!await _backupManager.ShowAsync(_settings, hosts.Select(h => h.BackupOwner).ToList()))
+            return;
+
+        foreach (var host in hosts.Where(h => h.SupportsBackup))
+            _ = LoadBackupsAsync(host);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeploy))]
     private async Task RestoreAsync(BackupEntryViewModel? entry)
     {
         if (entry is null)
@@ -906,10 +946,38 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         var host = entry.Parent;
+
+        // Older partial snapshots can't be restored without this one, so they have to go with it.
+        IReadOnlyList<DeploymentBackup> deletionSet;
+        try
+        {
+            deletionSet = await _backupService.GetDeletionSetAsync(entry.Backup);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not delete that snapshot: {ex.Message}";
+            return;
+        }
+
+        if (deletionSet.Count > 1)
+        {
+            var older = deletionSet.Where(b => b.Id != entry.Backup.Id).Select(b => $"#{b.Sequence}");
+            var confirmed = await _confirmationService.ConfirmActionAsync(
+                "Delete snapshots",
+                $"Snapshot #{entry.Backup.Sequence} of {host.Name} only records what its deploy changed, and every older " +
+                $"snapshot of this kind needs it to be restored. Deleting it also deletes {string.Join(", ", older)}.",
+                $"Delete {deletionSet.Count} snapshots");
+            if (!confirmed)
+                return;
+        }
+
         if (await _backupService.DeleteAsync(entry.Backup))
         {
-            Log.Add(LogLine.System($"Deleted snapshot {entry.Backup.DisplayName} for {host.Name}."));
-            StatusMessage = $"Deleted snapshot for {host.Name}.";
+            foreach (var deleted in deletionSet)
+                Log.Add(LogLine.System($"Deleted snapshot {deleted.DisplayName} for {host.Name}."));
+            StatusMessage = deletionSet.Count == 1
+                ? $"Deleted snapshot for {host.Name}."
+                : $"Deleted {deletionSet.Count} snapshots for {host.Name}.";
         }
         else
         {

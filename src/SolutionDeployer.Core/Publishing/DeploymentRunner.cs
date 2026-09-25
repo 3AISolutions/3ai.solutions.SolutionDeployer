@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
+using SolutionDeployer.Core.Projects;
 
 namespace SolutionDeployer.Core.Publishing;
 
@@ -9,7 +10,11 @@ public readonly record struct JobOutput(string JobId, string JobDisplayName, Out
 
 public sealed class DeploymentRunOptions
 {
-    /// <summary>Run selected jobs concurrently rather than one-at-a-time.</summary>
+    /// <summary>
+    /// Run unrelated projects concurrently rather than one-at-a-time. Jobs whose builds touch a common
+    /// project — the same project, or a shared <c>ProjectReference</c> — still run sequentially, since
+    /// concurrent builds of one project collide.
+    /// </summary>
     public bool RunInParallel { get; init; }
 
     /// <summary>Max concurrent publishes when <see cref="RunInParallel"/> is true.</summary>
@@ -81,14 +86,26 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
 
         if (options.RunInParallel)
         {
+            // Parallelize across unrelated builds only: two jobs that build a common project — the same
+            // one, or a shared ProjectReference such as a common class library — would restore and build
+            // into the same obj/bin folders at once and fail, so those run one after another.
+            var byProject = GroupByBuildOverlap(jobs);
+
             await Parallel.ForEachAsync(
-                jobs,
+                byProject,
                 new ParallelOptions
                 {
                     MaxDegreeOfParallelism = Math.Max(1, options.MaxParallelism),
                     CancellationToken = cancellationToken,
                 },
-                async (job, _) => await RunOne(job).ConfigureAwait(false)).ConfigureAwait(false);
+                async (projectJobs, ct) =>
+                {
+                    foreach (var job in projectJobs)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        await RunOne(job).ConfigureAwait(false);
+                    }
+                }).ConfigureAwait(false);
         }
         else
         {
@@ -110,6 +127,40 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
         return jobs
             .Where(j => byId.ContainsKey(j.Id))
             .Select(j => byId[j.Id])
+            .ToList();
+    }
+
+    /// <summary>
+    /// Splits jobs into groups that may run in parallel with each other: jobs whose builds share any
+    /// project (see <see cref="ProjectGraph.BuildClosure"/>) end up in the same group, in their original
+    /// order. E.g. two web apps that both reference one class library land together.
+    /// </summary>
+    internal static List<List<PublishJob>> GroupByBuildOverlap(IReadOnlyList<PublishJob> jobs)
+    {
+        // Union-find over job indices, joining any two jobs that build a common project file.
+        var parent = Enumerable.Range(0, jobs.Count).ToArray();
+        int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+
+        var firstBuilder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var closures = new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            var projectPath = Path.GetFullPath(jobs[i].Project.ProjectPath);
+            if (!closures.TryGetValue(projectPath, out var closure))
+                closures[projectPath] = closure = ProjectGraph.BuildClosure(projectPath);
+
+            foreach (var project in closure)
+            {
+                if (firstBuilder.TryGetValue(project, out var other))
+                    parent[Find(i)] = Find(other);
+                else
+                    firstBuilder[project] = i;
+            }
+        }
+
+        return Enumerable.Range(0, jobs.Count)
+            .GroupBy(Find)
+            .Select(group => group.Select(i => jobs[i]).ToList())
             .ToList();
     }
 

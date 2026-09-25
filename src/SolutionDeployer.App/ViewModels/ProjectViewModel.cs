@@ -17,6 +17,10 @@ public partial class ProjectViewModel : ObservableObject
     {
         Project = project;
         IsClassicWebProject = ProjectFormat.IsClassicWebProject(project.ProjectPath);
+        RequiresMsBuild = ProjectFormat.RequiresMsBuild(project.ProjectPath, out var classicProject);
+        MsBuildReason = !RequiresMsBuild ? null
+            : IsClassicWebProject ? "Classic ASP.NET (.NET Framework) project — only msbuild can build it"
+            : $"References {Path.GetFileName(classicProject)}, a classic .NET Framework project — only msbuild builds it reliably";
         Profiles = new ObservableCollection<ProfileViewModel>();
         ScriptTargets = new ObservableCollection<ScriptTargetViewModel>();
 
@@ -36,6 +40,15 @@ public partial class ProjectViewModel : ObservableObject
     /// the Web Application targets (MSB4019).
     /// </summary>
     public bool IsClassicWebProject { get; }
+
+    /// <summary>
+    /// Only full msbuild can build it: a classic web project, or one that references a classic .NET
+    /// Framework project (dotnet can't resolve that project's NuGet packages).
+    /// </summary>
+    public bool RequiresMsBuild { get; }
+
+    /// <summary>Why <see cref="RequiresMsBuild"/> is set, for the engine picker's tooltip.</summary>
+    public string? MsBuildReason { get; }
 
     public string Name => Project.Name;
 
@@ -70,6 +83,25 @@ public partial class ProjectViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isExpanded = true;
+
+    /// <summary>
+    /// The only project in its source: drawn without its own header (the source header carries its
+    /// controls), so it must stay expanded — there'd be no header left to re-open it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isFlattened;
+
+    partial void OnIsFlattenedChanged(bool value)
+    {
+        if (value)
+            IsExpanded = true;
+    }
+
+    partial void OnIsExpandedChanged(bool value)
+    {
+        if (!value && IsFlattened)
+            IsExpanded = true;
+    }
 
     /// <summary>False when hidden by the active filter.</summary>
     [ObservableProperty]

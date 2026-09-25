@@ -47,6 +47,24 @@ public sealed class MsBuildArgumentsTests : IDisposable
     }
 
     [Fact]
+    public void Sdk_project_referencing_a_classic_project_requires_msbuild()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "Common"));
+        File.WriteAllText(Path.Combine(_dir, "Common", "Common.vbproj"),
+            """<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003"></Project>""");
+
+        var api = Path.Combine(_dir, "Api.csproj");
+        File.WriteAllText(api,
+            """<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><ProjectReference Include="Common\Common.vbproj" /></ItemGroup></Project>""");
+        var standalone = Path.Combine(_dir, "Standalone.csproj");
+        File.WriteAllText(standalone, """<Project Sdk="Microsoft.NET.Sdk.Web"></Project>""");
+
+        Assert.True(ProjectFormat.RequiresMsBuild(api, out var classic));
+        Assert.EndsWith("Common.vbproj", classic);
+        Assert.False(ProjectFormat.RequiresMsBuild(standalone, out _));
+    }
+
+    [Fact]
     public void Classic_web_project_publishes_through_its_solution_with_DeployOnBuild()
     {
         var project = new DeploymentProject

@@ -8,19 +8,22 @@
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
-    <DockPanel Margin="16">
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4" />
-        <TextBlock DockPanel.Dock="Top" Text="What's new" FontWeight="SemiBold" Opacity="0.7" FontSize="12" Margin="0,0,0,6" />
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock Text="{Binding Heading}" Classes="heading" />
+            <TextBlock Text="Here's what's new in this version." Classes="subheading" />
+        </StackPanel>
 
-        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
-            <Button Grid.Column="1" Content="Later" Command="{Binding LaterCommand}" Margin="0,0,8,0" />
-            <Button Grid.Column="2" Content="Update now" Command="{Binding UpdateNowCommand}" Classes="accent" IsDefault="True" />
-        </Grid>
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <StackPanel Classes="buttons">
+                <Button Content="Later" Command="{Binding LaterCommand}" IsCancel="True" />
+                <Button Content="Update now" Command="{Binding UpdateNowCommand}" Classes="accent" IsDefault="True" />
+            </StackPanel>
+        </Border>
 
-        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+        <Border Classes="card">
             <ScrollViewer>
-                <SelectableTextBlock Text="{Binding Notes}" TextWrapping="Wrap"
-                                     FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12" />
+                <SelectableTextBlock Text="{Binding Notes}" TextWrapping="Wrap" Classes="mono" Margin="0,0,10,0" />
             </ScrollViewer>
         </Border>
     </DockPanel>

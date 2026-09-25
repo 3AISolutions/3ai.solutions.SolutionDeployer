@@ -22,6 +22,9 @@ public interface IBackupStore
     /// <summary>Existing snapshots for a profile, newest first (sequence, then time, then id).</summary>
     Task<IReadOnlyList<DeploymentBackup>> ListAsync(string profileKey, CancellationToken cancellationToken = default);
 
+    /// <summary>Every snapshot in this destination, whatever it belongs to (for cleanup).</summary>
+    Task<IReadOnlyList<DeploymentBackup>> ListAllAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Persists a package (currently at <paramref name="localPackagePath"/>) and its manifest.</summary>
     Task SaveAsync(DeploymentBackup backup, string localPackagePath, CancellationToken cancellationToken = default);
 

@@ -69,6 +69,12 @@ public sealed class DeploymentBackup
 
     public required string ProjectName { get; init; }
 
+    /// <summary>
+    /// Who the snapshot belongs to: the profile's file path, or the script's <see cref="Models.ScriptTarget.Id"/>.
+    /// Lets cleanup tell whether the owner still exists. Null on snapshots taken before it was recorded.
+    /// </summary>
+    public string? OwnerId { get; init; }
+
     public required BackupKind Kind { get; init; }
 
     public required DateTimeOffset CreatedUtc { get; init; }
@@ -113,6 +119,13 @@ public sealed class DeploymentBackup
     /// <summary><see cref="BackupKind.ScriptPartial"/> only: what was saved from each target the script deploys to.</summary>
     public IReadOnlyList<BackupTargetChanges> Targets { get; init; } = [];
 
+    /// <summary>
+    /// A partial snapshot only undoes its own deploy, so restoring it first rolls back every newer snapshot:
+    /// deleting a snapshot leaves every older partial one unrestorable.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPartial => Kind is BackupKind.MsDeployPartial or BackupKind.ScriptPartial;
+
     /// <summary>e.g. "4 saved, 1 added" for a partial snapshot; empty otherwise.</summary>
     [JsonIgnore]
     public string ChangeText => Kind switch
@@ -125,12 +138,14 @@ public sealed class DeploymentBackup
     };
 
     [JsonIgnore]
-    public string SizeText => SizeBytes switch
+    public string SizeText => FormatSize(SizeBytes);
+
+    public static string FormatSize(long bytes) => bytes switch
     {
-        >= 1L << 30 => $"{SizeBytes / (double)(1L << 30):F1} GB",
-        >= 1L << 20 => $"{SizeBytes / (double)(1L << 20):F1} MB",
-        >= 1L << 10 => $"{SizeBytes / (double)(1L << 10):F1} KB",
-        _ => $"{SizeBytes} B",
+        >= 1L << 30 => $"{bytes / (double)(1L << 30):F1} GB",
+        >= 1L << 20 => $"{bytes / (double)(1L << 20):F1} MB",
+        >= 1L << 10 => $"{bytes / (double)(1L << 10):F1} KB",
+        _ => $"{bytes} B",
     };
 
     /// <summary>e.g. "#3 · 2026-06-19 14:05:31 · 12.4 MB". The leading #N keeps same-second snapshots distinct.</summary>

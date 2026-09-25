@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.ConfirmActionWindow"
+        x:DataType="vm:ConfirmActionViewModel"
+        Title="{Binding Heading}"
+        Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <StackPanel Margin="20">
+        <TextBlock Text="{Binding Heading}" Classes="heading" />
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.8" Margin="0,8,0,0" />
+
+        <!-- Cancel is the default so Enter never removes anything by accident. -->
+        <Border Classes="footer" Margin="0,20,0,0">
+            <StackPanel Classes="buttons">
+                <Button Content="Cancel" Command="{Binding CancelCommand}" IsDefault="True" IsCancel="True" />
+                <Button Content="{Binding ConfirmLabel}" Command="{Binding ConfirmCommand}" Classes="danger" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</Window>

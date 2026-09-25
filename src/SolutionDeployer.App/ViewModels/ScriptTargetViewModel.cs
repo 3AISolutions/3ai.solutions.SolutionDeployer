@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
@@ -25,6 +26,9 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
             _password = rememberedPassword;
             _rememberPassword = true;
         }
+
+        // A saved password means there's nothing to fill in, so keep the fields tucked away in the row menu.
+        _showCredentials = rememberedPassword is null;
         RefreshAvailability();
     }
 
@@ -41,13 +45,32 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
     public bool CanRememberPassword => RequiresCredentials && CredentialStoreAvailable;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private string _userName = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private string _password = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private bool _rememberPassword;
+
+    /// <summary>Whether the username/password fields are expanded on the row.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsMenuText))]
+    private bool _showCredentials;
+
+    public string CredentialsMenuText => ShowCredentials ? "Hide credentials" : "Edit credentials…";
+
+    /// <summary>Who the script runs as, shown at the top of the row menu.</summary>
+    public string CredentialsSummary =>
+        string.IsNullOrWhiteSpace(UserName) ? "No username set"
+        : RememberPassword && !string.IsNullOrEmpty(Password) ? $"{UserName} (password saved)"
+        : UserName;
+
+    [RelayCommand]
+    private void ToggleCredentials() => ShowCredentials = !ShowCredentials;
 
     public override string Name => Target.Name;
 
@@ -68,8 +91,14 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
     private bool _isSelected;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusGlyph))]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
     private PublishStatus _status = PublishStatus.Pending;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    private bool _isQueued;
+
+    public string StatusText => TargetStatusText.Describe(Status, IsQueued);
 
     [ObservableProperty]
     private string _resultText = string.Empty;
@@ -79,15 +108,6 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
     private string? _problem;
 
     public bool HasProblem => !string.IsNullOrEmpty(Problem);
-
-    public string StatusGlyph => Status switch
-    {
-        PublishStatus.Running => "…",
-        PublishStatus.Succeeded => "✔",
-        PublishStatus.Failed => "✘",
-        PublishStatus.Cancelled => "⊘",
-        _ => "•",
-    };
 
     partial void OnIsSelectedChanged(bool value) => Parent.RefreshSelectionState();
 
@@ -101,6 +121,8 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(RequiresCredentials));
         OnPropertyChanged(nameof(CanRememberPassword));
+        if (RequiresCredentials && string.IsNullOrEmpty(Password))
+            ShowCredentials = true; // credentials just switched on: there's nothing saved to hide
         RefreshAvailability();
     }
 

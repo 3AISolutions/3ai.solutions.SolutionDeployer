@@ -18,7 +18,11 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     (the latter locates `msbuild.exe` via `MsBuildLocator`/vswhere, Windows only) and
     `ScriptPublishEngine` (runs a `ScriptTarget`: interpreter inferred by `ScriptInterpreters`, args
     split by `CommandLine`, `SD_*` context env). `ProcessRunner` streams output; `DeploymentRunner`
-    runs a batch of `PublishJob`s (each a profile **or** a script; sequential or parallel).
+    runs a batch of `PublishJob`s (each a profile **or** a script; sequential, or parallel *across unrelated builds* — jobs whose
+    builds touch a common project, itself or a shared `ProjectReference` (`Projects/ProjectGraph`), run one
+    after another, since concurrent builds of one project collide in obj/bin). Projects that are, or
+    reference, classic non-SDK projects are msbuild-only (`ProjectFormat.RequiresMsBuild`): dotnet can't
+    resolve a classic project's NuGet packages.
   - `Backup/BackupService` snapshots a `BackupOwner` (profile or script) before publishing. MSDeploy
     profiles get a *partial* snapshot: a preview FileSystem publish to temp, `msdeploy -whatif
     -useCheckSum` (parsed by `MsDeployChangeSet`), then only the updated/deleted paths are pulled via a
@@ -26,6 +30,10 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     snapshot of their configured folder, or (`ScriptBackupKind.WhatIf`) are first run with `-WhatIf` and
     must print `SD-WHATIF-TARGET: <computerName>` + msdeploy change lines + `Total changes: N` per target
     (`ScriptWhatIfReport`); targets reporting identical changes are saved once and restored to all.
+  - Because partial snapshots chain, deletion only ever removes an owner's *oldest* snapshots
+    (`BackupRetention`): deleting one also deletes every older partial one. `BackupCleanupService`
+    inventories all stores and classifies owners (active / old destination / orphaned / unknown) via
+    `DeploymentBackup.OwnerId`, falling back to profile paths remembered in settings for older snapshots.
   - `MsBuildPublishEngine` publishes classic (non-SDK) web projects via `DeployOnBuild` through their
     solution (`/t:<SolutionTargetName>`) — `/t:Publish` is ClickOnce there and silently skips them.
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**

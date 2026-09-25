@@ -9,43 +9,43 @@
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
-    <DockPanel Margin="16">
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" Classes="heading" Margin="0,0,0,12" />
 
-        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
-            <Button Grid.Column="1" Name="CopyButton" Content="Copy" Margin="0,0,8,0"
-                    ToolTip.Tip="Copy the summary as text" Click="OnCopyClick" />
-            <Button Grid.Column="2" Content="Close" Command="{Binding CloseCommand}" Classes="accent" />
-        </Grid>
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <StackPanel Classes="buttons">
+                <Button Name="CopyButton" Content="Copy"
+                        ToolTip.Tip="Copy the summary as text" Click="OnCopyClick" />
+                <Button Content="Close" Command="{Binding CloseCommand}" Classes="accent" IsDefault="True" IsCancel="True" />
+            </StackPanel>
+        </Border>
 
-        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+        <Border Classes="card">
             <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Projects}">
+                <ItemsControl ItemsSource="{Binding Projects}" Margin="0,0,10,0">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="git:ProjectHistory">
-                            <StackPanel Margin="0,0,0,12">
+                            <StackPanel Margin="0,0,0,14" Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Border Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center"
-                                            IsVisible="{Binding IsRoot}">
-                                        <TextBlock Text="deployed" FontSize="10" />
+                                    <Border Classes="pill" Background="#332888FF" IsVisible="{Binding IsRoot}">
+                                        <TextBlock Text="deployed" />
                                     </Border>
-                                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Branch, StringFormat='[{0}]'}" Opacity="0.6" FontSize="11"
-                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ProjectName}" Classes="name" />
+                                    <TextBlock Text="{Binding Branch, StringFormat='[{0}]'}" Classes="meta" />
                                     <TextBlock Text="● uncommitted changes" Foreground="#E0A044" FontSize="11"
                                                VerticalAlignment="Center" IsVisible="{Binding IsDirty}" />
                                 </StackPanel>
 
-                                <TextBlock Text="{Binding Note}" Opacity="0.6" FontSize="11" Margin="0,2,0,0"
-                                           TextWrapping="Wrap" IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                <TextBlock Text="{Binding Note}" Classes="hint"
+                                           IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-                                <ItemsControl ItemsSource="{Binding Commits}" Margin="4,4,0,0">
+                                <ItemsControl ItemsSource="{Binding Commits}" Margin="4,0,0,0">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="git:CommitInfo">
-                                            <Grid ColumnDefinitions="Auto,*" Margin="0,1">
-                                                <TextBlock Grid.Column="0" Text="{Binding ShortSha}" Margin="0,0,8,0"
-                                                           FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11" Opacity="0.7" />
-                                                <TextBlock Grid.Column="1" FontSize="11" TextWrapping="Wrap">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding ShortSha}" Classes="mono" FontSize="11"
+                                                           Opacity="0.6" Margin="0,0,10,0" />
+                                                <TextBlock Grid.Column="1" FontSize="12" TextWrapping="Wrap">
                                                     <Run Text="{Binding Subject}" /><Run Text="  " /><Run Text="{Binding Author}" Foreground="#888" /><Run Text=", " Foreground="#888" /><Run Text="{Binding Date}" Foreground="#888" />
                                                 </TextBlock>
                                             </Grid>

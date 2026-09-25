@@ -13,6 +13,43 @@ public static class ProjectFormat
     /// ClickOnce target and silently skips the project ("Skipping unpublishable project"); web publishing
     /// only runs through <c>/p:DeployOnBuild=true</c>.
     /// </summary>
+    /// <summary>
+    /// True when only full <c>msbuild.exe</c> can build the project: it's a classic web project, or it (or
+    /// anything it references) is a classic, non-SDK project. <c>dotnet</c> can't resolve a classic
+    /// project's NuGet <c>PackageReference</c>s, so compiling one fails (e.g. BC30002 "Type
+    /// 'ConfigurationRoot' is not defined") — and only succeeds when an earlier msbuild.exe build happened
+    /// to leave its output up to date, which makes the failure look random.
+    /// </summary>
+    public static bool RequiresMsBuild(string projectPath, out string? classicProject)
+    {
+        classicProject = null;
+        if (IsClassicWebProject(projectPath))
+        {
+            classicProject = projectPath;
+            return true;
+        }
+
+        classicProject = ProjectGraph.BuildClosure(projectPath).FirstOrDefault(IsClassicProject);
+        return classicProject is not null;
+    }
+
+    /// <summary>A non-SDK (old-style) project file.</summary>
+    public static bool IsClassicProject(string projectPath)
+    {
+        try
+        {
+            var root = XDocument.Load(projectPath).Root;
+            return root is not null &&
+                   root.Attribute("Sdk") is null &&
+                   !root.Elements().Any(e => e.Name.LocalName == "Sdk") &&
+                   !root.Elements().Any(e => e.Name.LocalName == "Import" && e.Attribute("Sdk") is not null);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool IsClassicWebProject(string projectPath)
     {
         try

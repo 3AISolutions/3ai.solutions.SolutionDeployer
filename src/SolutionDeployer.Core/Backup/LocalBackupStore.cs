@@ -26,18 +26,28 @@ public sealed class LocalBackupStore : IBackupStore
         return Path.Combine(folder, fileName);
     }
 
-    public Task<IReadOnlyList<DeploymentBackup>> ListAsync(string profileKey, CancellationToken cancellationToken = default)
-    {
-        var folder = Path.Combine(_root, profileKey);
-        if (!Directory.Exists(folder))
-            return Task.FromResult<IReadOnlyList<DeploymentBackup>>([]);
+    public Task<IReadOnlyList<DeploymentBackup>> ListAsync(string profileKey, CancellationToken cancellationToken = default) =>
+        Task.FromResult(BackupManifest.SortNewestFirst(ReadFolder(Path.Combine(_root, profileKey))));
 
-        var backups = Directory.EnumerateFiles(folder, "*.json")
-            .Select(f => BackupManifest.Deserialize(File.ReadAllText(f)))
-            .Where(b => b is not null && File.Exists(b.PackagePath))
-            .Select(b => b!);
+    public Task<IReadOnlyList<DeploymentBackup>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var backups = Directory.Exists(_root)
+            ? Directory.EnumerateDirectories(_root).SelectMany(ReadFolder)
+            : [];
 
         return Task.FromResult(BackupManifest.SortNewestFirst(backups));
+    }
+
+    private static IEnumerable<DeploymentBackup> ReadFolder(string folder)
+    {
+        if (!Directory.Exists(folder))
+            return [];
+
+        return Directory.EnumerateFiles(folder, "*.json")
+            .Select(f => BackupManifest.Deserialize(File.ReadAllText(f)))
+            .Where(b => b is not null && File.Exists(b.PackagePath))
+            .Select(b => b!)
+            .ToList();
     }
 
     public Task SaveAsync(DeploymentBackup backup, string localPackagePath, CancellationToken cancellationToken = default)
@@ -61,7 +71,31 @@ public sealed class LocalBackupStore : IBackupStore
     {
         TryDelete(backup.PackagePath);
         TryDelete(BackupManifest.ManifestKey(backup.PackagePath));
+        TryDeleteEmptyFolder(Path.GetDirectoryName(backup.PackagePath));
         return Task.CompletedTask;
+    }
+
+    /// <summary>Removes an owner's folder once its last snapshot is gone — only ever a folder inside the root.</summary>
+    private void TryDeleteEmptyFolder(string? folder)
+    {
+        try
+        {
+            if (folder is null)
+                return;
+
+            var root = Path.GetFullPath(_root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var full = Path.GetFullPath(folder);
+            if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) &&
+                Directory.Exists(full) &&
+                !Directory.EnumerateFileSystemEntries(full).Any())
+            {
+                Directory.Delete(full);
+            }
+        }
+        catch
+        {
+            // Best effort.
+        }
     }
 
     private static void TryDelete(string path)

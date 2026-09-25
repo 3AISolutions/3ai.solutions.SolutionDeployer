@@ -33,10 +33,20 @@ public sealed class S3BackupStore : IBackupStore
         return string.Join('/', parts);
     }
 
-    public async Task<IReadOnlyList<DeploymentBackup>> ListAsync(string profileKey, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DeploymentBackup>> ListAsync(string profileKey, CancellationToken cancellationToken = default) =>
+        ListManifestsAsync(ResolveKey(profileKey, string.Empty).TrimEnd('/') + "/", cancellationToken);
+
+    public Task<IReadOnlyList<DeploymentBackup>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        ListManifestsAsync(_prefix.Length > 0 ? _prefix + "/" : string.Empty, cancellationToken);
+
+    /// <summary>
+    /// Reads the manifests directly inside the owner folders under <paramref name="folderPrefix"/>
+    /// (<c>prefix/ownerKey/x.json</c>), so unrelated objects elsewhere in a shared bucket are never fetched.
+    /// </summary>
+    private async Task<IReadOnlyList<DeploymentBackup>> ListManifestsAsync(string folderPrefix, CancellationToken cancellationToken)
     {
         using var client = CreateClient();
-        var folderPrefix = ResolveKey(profileKey, string.Empty).TrimEnd('/') + "/";
+        var ownerDepth = _prefix.Length > 0 ? _prefix.Count(c => c == '/') + 2 : 1;
 
         var manifests = new List<DeploymentBackup>();
         var request = new ListObjectsV2Request { BucketName = _config.Bucket, Prefix = folderPrefix };
@@ -47,7 +57,8 @@ public sealed class S3BackupStore : IBackupStore
             response = await client.ListObjectsV2Async(request, cancellationToken).ConfigureAwait(false);
             foreach (var obj in response.S3Objects ?? [])
             {
-                if (!obj.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                if (!obj.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                    obj.Key.Count(c => c == '/') != ownerDepth)
                     continue;
 
                 using var get = await client.GetObjectAsync(_config.Bucket, obj.Key, cancellationToken).ConfigureAwait(false);

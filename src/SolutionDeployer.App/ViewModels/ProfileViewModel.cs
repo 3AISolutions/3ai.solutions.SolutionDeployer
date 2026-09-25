@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 
@@ -20,7 +21,7 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
     {
         Parent = parent;
         Profile = profile;
-        _engine = parent.IsClassicWebProject ? PublishEngineKind.MsBuild : defaultEngine;
+        _engine = parent.RequiresMsBuild ? PublishEngineKind.MsBuild : defaultEngine;
         _userName = rememberedUserName ?? profile.UserName ?? string.Empty;
         CredentialStoreAvailable = credentialStoreAvailable;
         if (rememberedPassword is not null)
@@ -28,6 +29,9 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
             _password = rememberedPassword;
             _rememberPassword = true;
         }
+
+        // A saved password means there's nothing to fill in, so keep the fields tucked away in the row menu.
+        _showCredentials = rememberedPassword is null;
     }
 
     public ProjectViewModel Parent { get; }
@@ -56,15 +60,21 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
     private static readonly IReadOnlyList<PublishEngineKind> MsBuildOnly = [PublishEngineKind.MsBuild];
 
     /// <summary>Engines selectable for this profile (bound by the row's ComboBox).</summary>
-    public IReadOnlyList<PublishEngineKind> Engines => Parent.IsClassicWebProject ? MsBuildOnly : AllEngines;
+    public IReadOnlyList<PublishEngineKind> Engines => Parent.RequiresMsBuild ? MsBuildOnly : AllEngines;
 
-    public string EngineHint => Parent.IsClassicWebProject
-        ? "Classic ASP.NET (.NET Framework) project — only msbuild can build it"
+    public string EngineHint => Parent.RequiresMsBuild
+        ? Parent.MsBuildReason!
         : "dotnet publish, or full msbuild (needed for .NET Framework / classic Web Deploy projects)";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusGlyph))]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
     private PublishStatus _status = PublishStatus.Pending;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    private bool _isQueued;
+
+    public string StatusText => TargetStatusText.Describe(Status, IsQueued);
 
     /// <summary>False when hidden by the active filter.</summary>
     [ObservableProperty]
@@ -74,28 +84,56 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
     private bool _isSelected;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EngineLabel), nameof(MethodSummary), nameof(Details), nameof(IsDotnetEngine), nameof(IsMsBuildEngine))]
     private PublishEngineKind _engine;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private string _userName = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private string _password = string.Empty;
 
     [ObservableProperty]
     private string _resultText = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private bool _rememberPassword;
 
-    public string StatusGlyph => Status switch
-    {
-        PublishStatus.Running => "…",
-        PublishStatus.Succeeded => "✔",
-        PublishStatus.Failed => "✘",
-        PublishStatus.Cancelled => "⊘",
-        _ => "•",
-    };
+    /// <summary>Whether the username/password fields are expanded on the row.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CredentialsMenuText))]
+    private bool _showCredentials;
+
+    public string CredentialsMenuText => ShowCredentials ? "Hide credentials" : "Edit credentials…";
+
+    /// <summary>Who the row deploys as, shown at the top of the row menu.</summary>
+    public string CredentialsSummary =>
+        string.IsNullOrWhiteSpace(UserName) ? "No username set"
+        : RememberPassword && !string.IsNullOrEmpty(Password) ? $"{UserName} (password saved)"
+        : UserName;
+
+    public string EngineLabel => Engine == PublishEngineKind.MsBuild ? "MSBuild" : "dotnet";
+
+    /// <summary>Publish method plus the engine that will run it, e.g. "MSDeploy · MSBuild".</summary>
+    public string MethodSummary => $"{Method} · {EngineLabel}";
+
+    /// <summary>One trimmable line for the row: method, engine and target.</summary>
+    public string Details => string.IsNullOrEmpty(Target) ? MethodSummary : $"{MethodSummary} · {Target}";
+
+    public bool IsDotnetEngine => Engine == PublishEngineKind.Dotnet;
+
+    public bool IsMsBuildEngine => Engine == PublishEngineKind.MsBuild;
+
+    public bool CanUseDotnet => !Parent.RequiresMsBuild;
+
+    [RelayCommand]
+    private void ToggleCredentials() => ShowCredentials = !ShowCredentials;
+
+    [RelayCommand]
+    private void SetEngine(PublishEngineKind engine) => Engine = engine;
 
     partial void OnIsSelectedChanged(bool value) => Parent.RefreshSelectionState();
 
@@ -103,7 +141,7 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
     partial void OnEngineChanged(PublishEngineKind value)
     {
         // A saved selection may still say "dotnet" for a classic web project; that can never build.
-        if (Parent.IsClassicWebProject && value != PublishEngineKind.MsBuild)
+        if (Parent.RequiresMsBuild && value != PublishEngineKind.MsBuild)
         {
             Engine = PublishEngineKind.MsBuild;
             return;

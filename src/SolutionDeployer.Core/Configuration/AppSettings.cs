@@ -22,6 +22,9 @@ public sealed class AppSettings
     /// <summary>How many snapshots to keep per profile before the oldest are pruned.</summary>
     public int BackupRetention { get; set; } = 10;
 
+    /// <summary>Snapshots older than this many days are pruned (the newest is always kept). Null = no age limit.</summary>
+    public int? BackupMaxAgeDays { get; set; }
+
     /// <summary>Named S3-compatible storage destinations available for backups (secret keys excluded).</summary>
     public List<S3BackupTarget> RemoteBackupTargets { get; set; } = [];
 

@@ -25,10 +25,13 @@ public sealed class DotnetPublishEngine(ProcessRunner processRunner) : IPublishE
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken = default)
     {
-        if (ProjectFormat.IsClassicWebProject(job.Project.ProjectPath))
+        if (ProjectFormat.RequiresMsBuild(job.Project.ProjectPath, out var classicProject))
         {
-            // dotnet has no Web Application targets, so it would fail with MSB4019 after a restore anyway.
-            var message = $"{job.Project.Name} is a classic ASP.NET (.NET Framework) project, which dotnet can't build. Use the msbuild engine.";
+            // dotnet lacks the Web Application targets (MSB4019) and can't resolve a classic project's NuGet
+            // packages, so it would fail — or, worse, only sometimes succeed.
+            var message = string.Equals(classicProject, job.Project.ProjectPath, StringComparison.OrdinalIgnoreCase)
+                ? $"{job.Project.Name} is a classic ASP.NET (.NET Framework) project, which dotnet can't build. Use the msbuild engine."
+                : $"{job.Project.Name} references {Path.GetFileName(classicProject)}, a classic .NET Framework project that dotnet can't build reliably. Use the msbuild engine.";
             onOutput(OutputLine.Error(message));
             return new PublishResult
             {

@@ -9,20 +9,15 @@ namespace SolutionDeployer.Core.Backup;
 /// </summary>
 public sealed class MsDeployLocator
 {
-    private string? _cached;
-    private bool _resolved;
+    // Thread-safe: parallel jobs call Locate() at the same moment (see MsBuildLocator).
+    private readonly Lazy<string?> _path;
+
+    public MsDeployLocator() =>
+        _path = new Lazy<string?>(() => IsSupported ? LocateOnWindows() : null, LazyThreadSafetyMode.ExecutionAndPublication);
 
     public bool IsSupported => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-    public string? Locate()
-    {
-        if (_resolved)
-            return _cached;
-
-        _resolved = true;
-        _cached = IsSupported ? LocateOnWindows() : null;
-        return _cached;
-    }
+    public string? Locate() => _path.Value;
 
     private static string? LocateOnWindows()
     {

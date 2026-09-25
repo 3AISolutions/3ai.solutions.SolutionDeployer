@@ -10,20 +10,16 @@ namespace SolutionDeployer.Core.Publishing;
 /// </summary>
 public sealed class MsBuildLocator
 {
-    private string? _cached;
-    private bool _resolved;
+    // Thread-safe: parallel jobs call Locate() at the same moment, and a plain "resolved" flag set before
+    // the lookup finished made the others see null ("Could not locate msbuild.exe").
+    private readonly Lazy<string?> _path;
+
+    public MsBuildLocator() =>
+        _path = new Lazy<string?>(() => IsSupported ? LocateViaVsWhere() : null, LazyThreadSafetyMode.ExecutionAndPublication);
 
     public bool IsSupported => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-    public string? Locate()
-    {
-        if (_resolved)
-            return _cached;
-
-        _resolved = true;
-        _cached = IsSupported ? LocateViaVsWhere() : null;
-        return _cached;
-    }
+    public string? Locate() => _path.Value;
 
     private static string? LocateViaVsWhere()
     {

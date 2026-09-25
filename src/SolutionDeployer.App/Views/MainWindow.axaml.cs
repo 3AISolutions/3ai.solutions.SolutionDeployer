@@ -1,6 +1,9 @@
 using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SolutionDeployer.App.ViewModels;
 
@@ -94,5 +97,43 @@ public partial class MainWindow : Window
             combo.SelectedItem = null;
             await vm.OpenRecentCommand.ExecuteAsync(path);
         }
+    }
+
+    // ---- Row "⋯" menus (sources and scripts). Items that act through the window's view model
+    // dispatch here: the button records which row the menu was opened for, and the items act on that.
+
+    private object? _menuRow;
+
+    private void OnRowMenuClick(object? sender, RoutedEventArgs e) =>
+        _menuRow = (sender as Control)?.DataContext;
+
+    private async void OnCopySourcePathClick(object? sender, RoutedEventArgs e)
+    {
+        if (_menuRow is SourceViewModel source && Clipboard is not null)
+            await Clipboard.SetTextAsync(source.Path);
+    }
+
+    private async void OnOpenSourceFolderClick(object? sender, RoutedEventArgs e)
+    {
+        if (_menuRow is SourceViewModel source && Path.GetDirectoryName(source.Path) is { Length: > 0 } dir)
+            await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(dir));
+    }
+
+    private async void OnRemoveSourceClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is SourceViewModel source)
+            await vm.RemoveSourceCommand.ExecuteAsync(source);
+    }
+
+    private async void OnEditScriptClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
+            await vm.EditScriptCommand.ExecuteAsync(script);
+    }
+
+    private async void OnRemoveScriptClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
+            await vm.RemoveScriptCommand.ExecuteAsync(script);
     }
 }

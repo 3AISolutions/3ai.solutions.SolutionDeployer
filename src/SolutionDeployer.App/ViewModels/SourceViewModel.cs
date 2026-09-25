@@ -12,6 +12,32 @@ public partial class SourceViewModel : ObservableObject
     public SourceViewModel(DeploymentSource source)
     {
         Source = source;
+        Projects.CollectionChanged += (_, _) => OnProjectsChanged();
+    }
+
+    /// <summary>
+    /// A source with exactly one project shows that project's header controls (checkbox, "+ Script",
+    /// profile count) itself, and the project renders without its own header.
+    /// </summary>
+    public bool IsSingleProject => Projects.Count == 1;
+
+    public ProjectViewModel? SingleProject => IsSingleProject ? Projects[0] : null;
+
+    /// <summary>What follows the source name in its header: the project count, or for a single project its
+    /// name (when it differs from the source's) and profile count.</summary>
+    public string HeaderDetail => SingleProject is { } project
+        ? (string.Equals(project.Name, Name, StringComparison.OrdinalIgnoreCase) ? "" : $"{project.Name} · ")
+          + $"{project.Profiles.Count} profiles"
+        : $"({Projects.Count})";
+
+    private void OnProjectsChanged()
+    {
+        foreach (var project in Projects)
+            project.IsFlattened = IsSingleProject;
+
+        OnPropertyChanged(nameof(IsSingleProject));
+        OnPropertyChanged(nameof(SingleProject));
+        OnPropertyChanged(nameof(HeaderDetail));
     }
 
     public DeploymentSource Source { get; }

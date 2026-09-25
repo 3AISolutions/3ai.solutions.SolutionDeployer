@@ -19,4 +19,18 @@ public sealed class DeployConfirmationService(IClassicDesktopStyleApplicationLif
         await window.ShowDialog(owner);
         return new DeployConfirmation(vm.Confirmed, vm.DontAskAgain);
     }
+
+    public async Task<bool> ConfirmActionAsync(string heading, string message, string confirmLabel)
+    {
+        var owner = lifetime.MainWindow;
+        if (owner is null)
+            return false;
+
+        var vm = new ConfirmActionViewModel(heading, message, confirmLabel);
+        var window = new ConfirmActionWindow { DataContext = vm };
+        vm.CloseRequested += () => window.Close();
+
+        await window.ShowDialog(owner);
+        return vm.Confirmed;
+    }
 }

@@ -4,75 +4,104 @@
         x:Class="SolutionDeployer.App.Views.RemoteTargetsWindow"
         x:DataType="vm:RemoteTargetsViewModel"
         Title="Backup destinations"
-        Width="680" Height="520" MinWidth="600" MinHeight="420"
+        Width="700" Height="540" MinWidth="600" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
-    <DockPanel Margin="16">
-        <TextBlock DockPanel.Dock="Top" Text="S3-compatible backup destinations" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4" />
-        <TextBlock DockPanel.Dock="Top" Text="Profiles can store snapshots locally or in any of these buckets. The secret key is kept in the OS credential store."
-                   Opacity="0.6" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12" />
+    <Window.Styles>
+        <Style Selector="StackPanel.field">
+            <Setter Property="Spacing" Value="4" />
+        </Style>
+    </Window.Styles>
 
-        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
-            <Button Grid.Column="0" Content="Test connection" Command="{Binding TestCommand}"
-                    IsEnabled="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            <TextBlock Grid.Column="1" Text="{Binding TestResult}" VerticalAlignment="Center" Margin="10,0"
-                       TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
-            <Button Grid.Column="3" Content="Save" Command="{Binding SaveCommand}" Classes="accent" />
-        </Grid>
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+            <TextBlock Text="S3-compatible backup destinations" Classes="heading" />
+            <TextBlock Text="Profiles can store snapshots locally or in any of these buckets. The secret key is kept in the OS credential store."
+                       Classes="subheading" />
+        </StackPanel>
 
-        <Grid ColumnDefinitions="200,*">
-            <DockPanel Grid.Column="0" Margin="0,0,12,0">
-                <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,*" Margin="0,6,0,0">
-                    <Button Grid.Column="0" Content="Add" Command="{Binding AddCommand}" HorizontalAlignment="Stretch" Margin="0,0,3,0" />
-                    <Button Grid.Column="1" Content="Remove" Command="{Binding RemoveCommand}" HorizontalAlignment="Stretch" Margin="3,0,0,0" />
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Content="Test connection" Command="{Binding TestCommand}"
+                        IsEnabled="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Grid.Column="1" Text="{Binding TestResult}" VerticalAlignment="Center" Margin="10,0"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding TestResult}" />
+                <StackPanel Grid.Column="2" Classes="buttons">
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+                    <Button Content="Save" Command="{Binding SaveCommand}" Classes="accent" IsDefault="True" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="210,*" ColumnSpacing="14">
+            <!-- Destination list -->
+            <DockPanel Grid.Column="0">
+                <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,*" ColumnSpacing="6" Margin="0,8,0,0">
+                    <Button Grid.Column="0" Content="Add" Command="{Binding AddCommand}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                    <Button Grid.Column="1" Content="Remove" Command="{Binding RemoveCommand}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
                 </Grid>
-                <ListBox ItemsSource="{Binding Targets}" SelectedItem="{Binding Selected}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:RemoteTargetEditViewModel">
-                            <TextBlock Text="{Binding DisplayName}" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Border Classes="card" Padding="2">
+                    <ListBox ItemsSource="{Binding Targets}" SelectedItem="{Binding Selected}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RemoteTargetEditViewModel">
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
             </DockPanel>
 
-            <ScrollViewer Grid.Column="1" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <StackPanel Spacing="8" DataContext="{Binding Selected}">
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="Name" FontWeight="SemiBold" FontSize="12" />
-                        <TextBox Text="{Binding Name}" />
-                    </StackPanel>
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="Service URL (endpoint)" FontWeight="SemiBold" FontSize="12" />
-                        <TextBox Text="{Binding ServiceUrl}" PlaceholderText="https://s3.eu-west-1.amazonaws.com  /  http://minio:9000" />
-                    </StackPanel>
-                    <Grid ColumnDefinitions="*,*" >
-                        <StackPanel Grid.Column="0" Spacing="3" Margin="0,0,6,0">
-                            <TextBlock Text="Region" FontWeight="SemiBold" FontSize="12" />
-                            <TextBox Text="{Binding Region}" PlaceholderText="us-east-1" />
+            <!-- Selected destination -->
+            <Border Grid.Column="1" Classes="card" Padding="14">
+                <Panel>
+                    <TextBlock Text="Add a destination to configure it." Opacity="0.5"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNull}}" />
+                    <ScrollViewer IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Spacing="12" DataContext="{Binding Selected}" Margin="0,0,10,0">
+                            <StackPanel Classes="field">
+                                <TextBlock Text="Name" Classes="label" />
+                                <TextBox Text="{Binding Name}" />
+                            </StackPanel>
+                            <StackPanel Classes="field">
+                                <TextBlock Text="Service URL (endpoint)" Classes="label" />
+                                <TextBox Text="{Binding ServiceUrl}" PlaceholderText="https://s3.eu-west-1.amazonaws.com  /  http://minio:9000" />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Classes="field">
+                                    <TextBlock Text="Region" Classes="label" />
+                                    <TextBox Text="{Binding Region}" PlaceholderText="us-east-1" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Classes="field">
+                                    <TextBlock Text="Bucket" Classes="label" />
+                                    <TextBox Text="{Binding Bucket}" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Classes="field">
+                                <TextBlock Text="Prefix (optional)" Classes="label" />
+                                <TextBox Text="{Binding Prefix}" PlaceholderText="deployments/backups" />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Classes="field">
+                                    <TextBlock Text="Access key" Classes="label" />
+                                    <TextBox Text="{Binding AccessKey}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Classes="field">
+                                    <TextBlock Text="Secret key" Classes="label" />
+                                    <TextBox Text="{Binding SecretKey}" PasswordChar="•" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Classes="field">
+                                <CheckBox Content="Use path-style addressing" IsChecked="{Binding ForcePathStyle}" />
+                                <TextBlock Text="Required for MinIO and most non-AWS providers." Classes="hint" Margin="28,0,0,0" />
+                            </StackPanel>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="3" Margin="6,0,0,0">
-                            <TextBlock Text="Bucket" FontWeight="SemiBold" FontSize="12" />
-                            <TextBox Text="{Binding Bucket}" />
-                        </StackPanel>
-                    </Grid>
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="Prefix (optional)" FontWeight="SemiBold" FontSize="12" />
-                        <TextBox Text="{Binding Prefix}" PlaceholderText="deployments/backups" />
-                    </StackPanel>
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="Access key" FontWeight="SemiBold" FontSize="12" />
-                        <TextBox Text="{Binding AccessKey}" />
-                    </StackPanel>
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="Secret key" FontWeight="SemiBold" FontSize="12" />
-                        <TextBox Text="{Binding SecretKey}" PasswordChar="•" />
-                    </StackPanel>
-                    <CheckBox Content="Use path-style addressing (required for MinIO and most non-AWS providers)"
-                              IsChecked="{Binding ForcePathStyle}" />
-                </StackPanel>
-            </ScrollViewer>
+                    </ScrollViewer>
+                </Panel>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

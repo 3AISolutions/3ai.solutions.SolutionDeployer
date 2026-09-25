@@ -9,40 +9,52 @@
         Icon="/Assets/app-icon.ico">
 
     <Window.Styles>
-        <Style Selector="TextBlock.result">
+        <!-- Only the status marks are coloured; names and details stay readable. -->
+        <Style Selector="TextBlock.status">
             <Setter Property="Foreground" Value="#E05561" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <Style Selector="TextBlock.result.success">
+        <Style Selector="TextBlock.status.success">
             <Setter Property="Foreground" Value="#2EA043" />
+        </Style>
+        <Style Selector="TextBlock.detail">
+            <Setter Property="Opacity" Value="0.7" />
+        </Style>
+        <Style Selector="TextBlock.detail.failure">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Foreground" Value="#E05561" />
         </Style>
     </Window.Styles>
 
-    <DockPanel Margin="16">
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" Classes="heading" Margin="0,0,0,12" />
 
-        <Button DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,12,0,0"
-                Content="Close" Command="{Binding CloseCommand}" Classes="accent" IsDefault="True" IsCancel="True" />
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <StackPanel Classes="buttons">
+                <Button Content="Close" Command="{Binding CloseCommand}" Classes="accent" IsDefault="True" IsCancel="True" />
+            </StackPanel>
+        </Border>
 
-        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+        <Border Classes="card">
             <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Projects}">
+                <ItemsControl ItemsSource="{Binding Projects}" Margin="0,0,10,0">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:DeploySummaryProject">
-                            <StackPanel Margin="0,4,0,8" Spacing="2">
+                            <StackPanel Margin="0,0,0,12" Spacing="4">
                                 <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
-                                               Classes="result" Classes.success="{Binding IsSuccess}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontWeight="SemiBold"
-                                               Classes="result" Classes.success="{Binding IsSuccess}" />
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" Classes="name" />
+                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12"
+                                               Classes="status" Classes.success="{Binding IsSuccess}" />
                                 </Grid>
-                                <ItemsControl ItemsSource="{Binding Targets}" Margin="16,0,0,0">
+                                <ItemsControl ItemsSource="{Binding Targets}" Margin="12,0,0,0">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:DeploySummaryTarget">
-                                            <Grid ColumnDefinitions="Auto,*" Margin="0,1">
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}" Margin="0,0,12,0"
-                                                           Classes="result" Classes.success="{Binding IsSuccess}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Detail}" TextWrapping="Wrap"
-                                                           Classes="result" Classes.success="{Binding IsSuccess}" />
+                                            <Grid ColumnDefinitions="18,Auto,*" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="✔" Classes="status success" IsVisible="{Binding IsSuccess}" />
+                                                <TextBlock Grid.Column="0" Text="✘" Classes="status" IsVisible="{Binding !IsSuccess}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="0,0,12,0" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12"
+                                                           Classes="detail" Classes.failure="{Binding !IsSuccess}" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

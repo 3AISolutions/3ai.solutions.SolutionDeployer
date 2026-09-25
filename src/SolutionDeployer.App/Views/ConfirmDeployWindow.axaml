@@ -8,22 +8,27 @@
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
-    <DockPanel Margin="16">
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" Classes="heading" Margin="0,0,0,12" />
 
-        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
-            <CheckBox Grid.Column="0" Content="Don't ask again" IsChecked="{Binding DontAskAgain}" VerticalAlignment="Center"
-                      ToolTip.Tip="Turns off deploy confirmation (re-enable it from the toolbar)" />
-            <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
-            <Button Grid.Column="2" Content="Deploy" Command="{Binding ConfirmCommand}" Classes="accent" IsDefault="True" />
-        </Grid>
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="*,Auto">
+                <CheckBox Grid.Column="0" Content="Don't ask again" IsChecked="{Binding DontAskAgain}" VerticalAlignment="Center"
+                          ToolTip.Tip="Turns off deploy confirmation (re-enable it under Options)" />
+                <StackPanel Grid.Column="1" Classes="buttons">
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+                    <Button Content="Deploy" Command="{Binding ConfirmCommand}" Classes="accent" IsDefault="True" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+        <Border Classes="card">
             <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Targets}">
+                <ItemsControl ItemsSource="{Binding Targets}" Margin="0,0,10,0">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
-                            <TextBlock Text="{Binding}" Margin="0,2" TextWrapping="NoWrap" />
+                            <TextBlock Text="{Binding}" Margin="0,3" TextTrimming="CharacterEllipsis"
+                                       ToolTip.Tip="{Binding}" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

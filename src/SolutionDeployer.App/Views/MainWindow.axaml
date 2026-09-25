@@ -3,14 +3,16 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        xmlns:models="clr-namespace:SolutionDeployer.Core.Models;assembly=SolutionDeployer.Core"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
         x:Class="SolutionDeployer.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Width="1100" Height="720" MinWidth="820" MinHeight="520"
+        Width="1100" Height="720" MinWidth="900" MinHeight="520"
         Icon="/Assets/app-icon.ico"
         Title="3ai Solution Deployer">
 
     <Window.Styles>
+        <!-- Shared styles (card, pill, meta, small inputs…) are in App.axaml. -->
         <Style Selector="TextBlock.logline">
             <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, monospace" />
             <Setter Property="FontSize" Value="12" />
@@ -19,330 +21,514 @@
         <Style Selector="TextBlock.logline.error">
             <Setter Property="Foreground" Value="#E05561" />
         </Style>
-        <Style Selector="Border.card">
-            <Setter Property="BorderBrush" Value="#33808080" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="6" />
+        <Style Selector="Border.bar">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Background" Value="#11808080" />
+        </Style>
+        <!-- Header strip inside a card (list filter, output title) -->
+        <Style Selector="Border.strip">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="BorderBrush" Value="#22808080" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <!-- Tree: kept dense so more targets fit on screen -->
+        <Style Selector="Expander">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="6,4" />
             <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style Selector="Expander.project">
+            <Setter Property="Padding" Value="4,2,4,4" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+        </Style>
+        <!-- Only project in its source: no header or frame, its rows sit directly under the source -->
+        <Style Selector="Expander.project.flat">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Expander.project.flat /template/ ToggleButton#ExpanderHeader">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Expander.project.flat /template/ Border#ExpanderContent">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Expander Button.small">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="7,0" />
+        </Style>
+        <Style Selector="Expander CheckBox">
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <!-- Target rows: ticked rows get an accent tint and a bar on the left -->
+        <Style Selector="Border.row">
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.row:pointerover">
+            <Setter Property="Background" Value="#0F808080" />
+        </Style>
+        <Style Selector="Border.row.selected">
+            <Setter Property="Background" Value="#262888FF" />
+            <Setter Property="BorderBrush" Value="#2888FF" />
+        </Style>
+        <Style Selector="Border.row.selected:pointerover">
+            <Setter Property="Background" Value="#332888FF" />
+        </Style>
+        <Style Selector="Border.backups">
+            <Setter Property="Background" Value="#0D808080" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+
+        <!-- Run status dot: hollow = waiting, pulsing blue = deploying, green / red / amber = result -->
+        <Style Selector="Panel.status">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Panel.status > Ellipse">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Fill" Value="Transparent" />
+            <Setter Property="Stroke" Value="#9A9A9A" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+        </Style>
+        <Style Selector="Panel.status > Ellipse.running">
+            <Setter Property="Fill" Value="#3B8EEA" />
+            <Setter Property="StrokeThickness" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="Infinite" PlaybackDirection="Alternate">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.3" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Panel.status > Ellipse.succeeded">
+            <Setter Property="Fill" Value="#2EA043" />
+            <Setter Property="StrokeThickness" Value="0" />
+        </Style>
+        <Style Selector="Panel.status > Ellipse.failed">
+            <Setter Property="Fill" Value="#E05561" />
+            <Setter Property="StrokeThickness" Value="0" />
+        </Style>
+        <Style Selector="Panel.status > Ellipse.cancelled">
+            <Setter Property="Fill" Value="#E0A044" />
+            <Setter Property="StrokeThickness" Value="0" />
         </Style>
     </Window.Styles>
 
+    <Window.Resources>
+        <!-- Compact Fluent expanders (default header is 48px tall with 16px content padding). -->
+        <x:Double x:Key="ExpanderMinHeight">34</x:Double>
+        <x:Double x:Key="ExpanderChevronButtonSize">24</x:Double>
+        <Thickness x:Key="ExpanderHeaderPadding">10,0,4,0</Thickness>
+        <Thickness x:Key="ExpanderChevronMargin">6,0,6,0</Thickness>
+        <Thickness x:Key="ExpanderContentPadding">6,4</Thickness>
+
+        <!-- Snapshot picker shared by profile and script rows. -->
+        <DataTemplate x:Key="BackupPanel" x:DataType="vm:BackupHostViewModel">
+            <Border Classes="backups">
+                <WrapPanel ItemSpacing="6" LineSpacing="4">
+                    <TextBlock Text="Store" Classes="meta" />
+                    <ComboBox Classes="small" ItemsSource="{Binding BackupDestinations}"
+                              SelectedItem="{Binding SelectedDestination, Mode=TwoWay}" MinWidth="120"
+                              ToolTip.Tip="Where this target's snapshots are stored (local disk or a configured remote)" />
+                    <TextBlock Text="Snapshot" Classes="meta" Margin="6,0,0,0" />
+                    <ComboBox Classes="small" ItemsSource="{Binding Backups}"
+                              SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
+                              MinWidth="200" PlaceholderText="No snapshots yet">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:BackupEntryViewModel">
+                                <TextBlock Text="{Binding DisplayName}" FontSize="11" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Classes="small" Content="Restore" IsEnabled="{Binding HasBackups}"
+                            ToolTip.Tip="Roll the target back to how it was before the selected snapshot's deploy (a Web Deploy rollback also undoes every newer deploy)"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
+                            CommandParameter="{Binding SelectedBackup}" />
+                    <Button Classes="small" Content="Delete" IsEnabled="{Binding HasBackups}"
+                            ToolTip.Tip="Delete the selected snapshot"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
+                            CommandParameter="{Binding SelectedBackup}" />
+                    <Button Classes="small ghost" Content="↻"
+                            ToolTip.Tip="Refresh the snapshot list"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
+                            CommandParameter="{Binding}" />
+                </WrapPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
     <DockPanel>
-        <!-- Top toolbar -->
-        <Border DockPanel.Dock="Top" Padding="10,8" Background="#11808080">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <!-- Single toolbar: sources on the left, deploy + app menus on the right -->
+        <Border DockPanel.Dock="Top" Classes="bar">
+            <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                     <Button Content="Add Solution…" Command="{Binding AddSolutionCommand}" />
                     <Button Content="Add Project…" Command="{Binding AddProjectCommand}" />
-                    <Button Content="Refresh" Command="{Binding RefreshAllCommand}"
-                            ToolTip.Tip="Re-read all added sources from disk" />
                     <ComboBox Name="RecentCombo" ItemsSource="{Binding RecentSolutions}"
-                              PlaceholderText="Recent…" MinWidth="180"
+                              PlaceholderText="Recent…" MinWidth="130" VerticalAlignment="Center"
                               SelectionChanged="OnRecentSelectionChanged" />
+                    <Button Content="↻" Command="{Binding RefreshAllCommand}" MinWidth="36"
+                            HorizontalContentAlignment="Center"
+                            ToolTip.Tip="Refresh: re-read all added sources from disk" />
                 </StackPanel>
-                <TextBox Grid.Column="2" Text="{Binding FilterText}" PlaceholderText="Filter projects / profiles…"
-                         MaxWidth="280" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0"
-                         ToolTip.Tip="Filter the tree by source, project, profile or script name" />
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{Binding AppVersion}" VerticalAlignment="Center" Opacity="0.7"
-                               ToolTip.Tip="Installed version" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7">
+                        <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
+                    </TextBlock>
+                    <Button Content="Deploy Selected" Command="{Binding DeployCommand}"
+                            Classes="accent" IsEnabled="{Binding !IsRunning}" />
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                    <Border Width="1" Background="#33808080" Margin="4,4" />
                     <Button Content="Options ▾" ToolTip.Tip="Deploy and startup options">
                         <Button.Flyout>
                             <Flyout Placement="BottomEdgeAlignedRight">
                                 <StackPanel x:DataType="vm:MainWindowViewModel" Spacing="8" MinWidth="240" Margin="4">
-                                    <TextBlock Text="WHEN DEPLOYING" FontSize="10" FontWeight="SemiBold" Opacity="0.6" />
+                                    <TextBlock Text="WHEN DEPLOYING" Classes="caption" />
                                     <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" />
                                     <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}"
                                               ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
                                     <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}"
                                               ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
                                     <Separator Margin="0,2" />
-                                    <TextBlock Text="ON STARTUP" FontSize="10" FontWeight="SemiBold" Opacity="0.6" />
+                                    <TextBlock Text="ON STARTUP" Classes="caption" />
                                     <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
                                               ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
                                     <Separator Margin="0,2" />
                                     <Button Content="Backup destinations…" HorizontalAlignment="Stretch"
                                             Command="{Binding ManageBackupTargetsCommand}"
                                             ToolTip.Tip="Configure S3-compatible remotes for storing snapshots" />
+                                    <Button Content="Manage backups…" HorizontalAlignment="Stretch"
+                                            Command="{Binding ManageBackupsCommand}"
+                                            ToolTip.Tip="See every snapshot, set how many to keep, and delete the ones no longer needed" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Content="What's New" Command="{Binding ShowWhatsNewCommand}"
-                            ToolTip.Tip="Show the changelog for the current version" />
-                    <Button Content="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
+                    <Button Content="Help ▾" ToolTip.Tip="Release notes and updates">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuItem Header="What's New" Command="{Binding ShowWhatsNewCommand}" />
+                                <MenuItem Header="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" Padding="10,6" Background="#11808080">
+        <Border DockPanel.Dock="Bottom" Classes="bar">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" VerticalAlignment="Center" />
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding UpdateStatus}" Opacity="0.7" VerticalAlignment="Center" />
                     <ProgressBar Width="120" Minimum="0" Maximum="100" Value="{Binding UpdateProgress}"
-                                 Height="6" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding UpdateStatus}" Opacity="0.8" VerticalAlignment="Center" />
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- Action bar -->
-        <Border DockPanel.Dock="Top" Padding="10,6">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-                <Button Grid.Column="0" Content="Select All" Command="{Binding SelectAllCommand}" Margin="0,0,6,0" />
-                <Button Grid.Column="1" Content="Clear" Command="{Binding ClearSelectionCommand}" />
-                <TextBlock Grid.Column="3" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.7">
-                    <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
-                </TextBlock>
-                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6">
-                    <Button Content="Deploy Selected" Command="{Binding DeployCommand}"
-                            Classes="accent" IsEnabled="{Binding !IsRunning}" />
-                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                                 Height="6" MinHeight="6" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding AppVersion}" Opacity="0.7" VerticalAlignment="Center"
+                               ToolTip.Tip="Installed version" />
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- Main split: projects | log -->
-        <Grid ColumnDefinitions="*,5,1.2*" Margin="10,0,10,10">
+        <Grid Margin="8,6,8,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="460" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="2*" MinWidth="240" />
+            </Grid.ColumnDefinitions>
+
             <!-- Sources → projects → profiles -->
-            <Border Grid.Column="0" Classes="card" Margin="0,4,0,0">
+            <Border Grid.Column="0" Classes="card" Padding="0">
+                <DockPanel>
+                    <!-- List strip: filter + selection helpers -->
+                    <Border DockPanel.Dock="Top" Classes="strip">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBox Grid.Column="0" Classes="small" Text="{Binding FilterText}"
+                                     PlaceholderText="Filter projects / profiles…"
+                                     ToolTip.Tip="Filter the tree by source, project, profile or script name" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                <Button Classes="small" Content="Select All" Command="{Binding SelectAllCommand}" />
+                                <Button Classes="small" Content="Clear" Command="{Binding ClearSelectionCommand}"
+                                        ToolTip.Tip="Untick everything" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
                 <Panel>
                     <TextBlock Text="Add a solution or project to begin." Opacity="0.5"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                IsVisible="{Binding !HasSources}" />
-                    <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding Sources}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:SourceViewModel">
-                              <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,3">
-                                <Expander.Header>
-                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                                        <Border Grid.Column="0" Background="#332888FF" CornerRadius="3" Padding="5,1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding KindLabel}" FontSize="11" />
-                                        </Border>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Projects.Count, StringFormat='({0})'}" Opacity="0.6" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Problem}" Foreground="#E05561" FontSize="11"
-                                                       VerticalAlignment="Center" IsVisible="{Binding HasProblem}" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="{Binding Path}" Opacity="0.4" FontSize="11"
-                                                   VerticalAlignment="Center" Margin="12,0" TextTrimming="CharacterEllipsis" />
-                                        <Button Grid.Column="3" Content="✕" Padding="7,1" Background="Transparent"
-                                                ToolTip.Tip="Remove this source"
-                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveSourceCommand}"
-                                                CommandParameter="{Binding}" />
-                                    </Grid>
-                                </Expander.Header>
-                                <ItemsControl ItemsSource="{Binding Projects}" Margin="14,1,0,1">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:ProjectViewModel">
-                                <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}" Margin="0,0,0,2">
-                                    <Expander.Header>
-                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsThreeState="True"
-                                                      IsEnabled="{Binding HasTargets}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="2" Text="{Binding Profiles.Count, StringFormat='({0} profiles)'}"
-                                                       Opacity="0.6" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            <Button Grid.Column="3" Content="+ Script" FontSize="11" Padding="6,2"
-                                                    ToolTip.Tip="Add a script deployment to this project"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddScriptCommand}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
-                                    </Expander.Header>
-                                    <StackPanel>
-                                    <ItemsControl ItemsSource="{Binding Profiles}" Margin="20,1,0,1">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:ProfileViewModel">
-                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,3"
-                                                        IsVisible="{Binding IsVisible}">
-                                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
-                                                        <CheckBox Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
-                                                                  IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
-                                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />
-                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                                            <Border Background="#22808080" CornerRadius="3" Padding="4,1">
-                                                                <TextBlock Text="{Binding FormatLabel}" FontSize="11" Opacity="0.8" />
-                                                            </Border>
-                                                            <TextBlock Text="{Binding Method}" Opacity="0.6" VerticalAlignment="Center" FontSize="11" />
-                                                            <TextBlock Text="{Binding Target}" Opacity="0.6" VerticalAlignment="Center"
-                                                                       FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="240" />
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ResultText}"
-                                                                   Opacity="0.8" VerticalAlignment="Center" FontSize="11" />
-                                                        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
-                                                            <ComboBox ItemsSource="{Binding Engines}"
-                                                                      SelectedItem="{Binding Engine}" MinWidth="90" FontSize="11"
-                                                                      ToolTip.Tip="{Binding EngineHint}" />
-                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
-                                                                     IsVisible="{Binding RequiresCredentials}" />
-                                                            <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
-                                                                     PasswordChar="•" IsVisible="{Binding RequiresCredentials}" />
-                                                            <CheckBox Content="Remember" IsChecked="{Binding RememberPassword}"
-                                                                      FontSize="11" VerticalAlignment="Center"
-                                                                      IsVisible="{Binding CanRememberPassword}"
-                                                                      ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
-                                                            <Button Content="Summary" FontSize="11" Padding="6,2"
-                                                                    ToolTip.Tip="Commit history for this project and its dependencies since the last deploy"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ReleaseSummaryCommand}"
-                                                                    CommandParameter="{Binding}" />
-                                                            <Button Content="{Binding BackupBadge}" FontSize="11" Padding="6,2"
-                                                                    IsVisible="{Binding SupportsBackup}"
-                                                                    ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
-                                                                    Command="{Binding ToggleBackupsCommand}" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,3,0,0"
-                                                                    IsVisible="{Binding ShowBackups}">
-                                                            <TextBlock Text="Store:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
-                                                            <ComboBox ItemsSource="{Binding BackupDestinations}" SelectedItem="{Binding SelectedDestination, Mode=TwoWay}"
-                                                                      MinWidth="120" FontSize="11"
-                                                                      ToolTip.Tip="Where this profile's snapshots are stored (local disk or a configured remote)" />
-                                                            <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
-                                                            <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
-                                                                      MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">
-                                                                <ComboBox.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:BackupEntryViewModel">
-                                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" />
-                                                                    </DataTemplate>
-                                                                </ComboBox.ItemTemplate>
-                                                            </ComboBox>
-                                                            <Button Content="Restore" FontSize="11" Padding="6,2"
-                                                                    IsEnabled="{Binding HasBackups}"
-                                                                    ToolTip.Tip="Roll this target back to how it was before the selected snapshot's deploy (a Web Deploy rollback also undoes every newer deploy)"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
-                                                                    CommandParameter="{Binding SelectedBackup}" />
-                                                            <Button Content="Delete" FontSize="11" Padding="6,2"
-                                                                    IsEnabled="{Binding HasBackups}"
-                                                                    ToolTip.Tip="Delete the selected snapshot"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
-                                                                    CommandParameter="{Binding SelectedBackup}" />
-                                                            <Button Content="↻" FontSize="11" Padding="6,2"
-                                                                    ToolTip.Tip="Refresh the snapshot list"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
-                                                                    CommandParameter="{Binding}" />
-                                                        </StackPanel>
-                                                    </Grid>
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Sources}" Margin="6,6,12,6">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SourceViewModel">
+                                    <Expander IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}">
+                                        <Expander.Header>
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                <!-- Single-project source: the project's own header controls live here -->
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding SingleProject.IsSelected}" IsThreeState="True"
+                                                          IsEnabled="{Binding SingleProject.HasTargets}" MinWidth="0"
+                                                          IsVisible="{Binding IsSingleProject}"
+                                                          ToolTip.Tip="Select every target in this project" />
+                                                <Border Grid.Column="1" Classes="pill" Background="#332888FF">
+                                                    <TextBlock Text="{Binding KindLabel}" />
                                                 </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                                <TextBlock Grid.Column="2" Text="{Binding Name}" Classes="name" />
+                                                <TextBlock Grid.Column="3" Text="{Binding HeaderDetail}" Classes="meta" Opacity="0.7" />
+                                                <TextBlock Grid.Column="4" Text="{Binding Problem}" Classes="problem"
+                                                           IsVisible="{Binding HasProblem}" />
+                                                <TextBlock Grid.Column="5" Text="{Binding Path}" Classes="meta" Opacity="0.4"
+                                                           ToolTip.Tip="{Binding Path}" />
+                                                <Button Grid.Column="6" Classes="small" Content="+ Script"
+                                                        IsVisible="{Binding IsSingleProject}"
+                                                        ToolTip.Tip="Add a script deployment to this project"
+                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddScriptCommand}"
+                                                        CommandParameter="{Binding SingleProject}" />
+                                                <!-- Source actions; Remove lives here (and asks first) so it can't be hit by accident -->
+                                                <Button Grid.Column="7" Classes="small ghost" Content="⋯" FontSize="14"
+                                                        ToolTip.Tip="Source actions" Click="OnRowMenuClick">
+                                                    <Button.Flyout>
+                                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                            <MenuItem Header="Copy path" Click="OnCopySourcePathClick" />
+                                                            <MenuItem Header="Open containing folder" Click="OnOpenSourceFolderClick" />
+                                                            <Separator />
+                                                            <MenuItem Header="Remove from list…" Click="OnRemoveSourceClick" />
+                                                        </MenuFlyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                            </Grid>
+                                        </Expander.Header>
 
-                                    <!-- Script targets -->
-                                    <ItemsControl ItemsSource="{Binding ScriptTargets}" Margin="20,0,0,4"
-                                                  IsVisible="{Binding HasScripts}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:ScriptTargetViewModel">
-                                                <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
-                                                        IsVisible="{Binding IsVisible}">
-                                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                        <CheckBox Grid.Column="0" Grid.RowSpan="3" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
-                                                        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
-                                                            <StackPanel.IsVisible>
-                                                                <MultiBinding Converter="{x:Static BoolConverters.Or}">
-                                                                    <Binding Path="RequiresCredentials" />
-                                                                    <Binding Path="SupportsBackup" />
-                                                                </MultiBinding>
-                                                            </StackPanel.IsVisible>
-                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
-                                                                     IsVisible="{Binding RequiresCredentials}" />
-                                                            <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
-                                                                     PasswordChar="•" IsVisible="{Binding RequiresCredentials}" />
-                                                            <CheckBox Content="Remember" IsChecked="{Binding RememberPassword}"
-                                                                      FontSize="11" VerticalAlignment="Center"
-                                                                      IsVisible="{Binding CanRememberPassword}"
-                                                                      ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
-                                                            <Button Content="{Binding BackupBadge}" FontSize="11" Padding="6,2"
-                                                                    IsVisible="{Binding SupportsBackup}"
-                                                                    ToolTip.Tip="Show/hide saved snapshots of this script's target folder"
-                                                                    Command="{Binding ToggleBackupsCommand}" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="4"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,3,0,0"
-                                                                    IsVisible="{Binding ShowBackups}">
-                                                            <TextBlock Text="Store:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
-                                                            <ComboBox ItemsSource="{Binding BackupDestinations}" SelectedItem="{Binding SelectedDestination, Mode=TwoWay}"
-                                                                      MinWidth="120" FontSize="11"
-                                                                      ToolTip.Tip="Where this script's snapshots are stored (local disk or a configured remote)" />
-                                                            <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
-                                                            <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
-                                                                      MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">
-                                                                <ComboBox.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:BackupEntryViewModel">
-                                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" />
+                                        <ItemsControl ItemsSource="{Binding Projects}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ProjectViewModel">
+                                                    <Expander Classes="project" Classes.flat="{Binding IsFlattened}"
+                                                              IsExpanded="{Binding IsExpanded}" IsVisible="{Binding IsVisible}">
+                                                        <Expander.Header>
+                                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsThreeState="True"
+                                                                          IsEnabled="{Binding HasTargets}" MinWidth="0" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding Profiles.Count, StringFormat='{}{0} profiles'}"
+                                                                           Classes="meta" />
+                                                                <Button Grid.Column="3" Classes="small" Content="+ Script"
+                                                                        ToolTip.Tip="Add a script deployment to this project"
+                                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddScriptCommand}"
+                                                                        CommandParameter="{Binding}" />
+                                                            </Grid>
+                                                        </Expander.Header>
+
+                                                        <StackPanel>
+                                                            <!-- Publish profiles -->
+                                                            <ItemsControl ItemsSource="{Binding Profiles}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="vm:ProfileViewModel">
+                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" IsVisible="{Binding IsVisible}">
+                                                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                                                                <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding IsSelected}"
+                                                                                          VerticalAlignment="Center" MinWidth="0" Margin="0,-4,8,-4" />
+
+                                                                                <!-- Identity: status, name, format, method/engine, target, result, row actions -->
+                                                                                <Grid Grid.Row="0" Grid.Column="1"
+                                                                                      ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                                                    <Panel Grid.Column="0" Classes="status" ToolTip.Tip="{Binding StatusText}">
+                                                                                        <Ellipse IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                                                                 Classes.running="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Running}}"
+                                                                                                 Classes.succeeded="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Succeeded}}"
+                                                                                                 Classes.failed="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Failed}}"
+                                                                                                 Classes.cancelled="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Cancelled}}" />
+                                                                                    </Panel>
+                                                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
+                                                                                    <Border Grid.Column="2" Classes="pill">
+                                                                                        <TextBlock Text="{Binding FormatLabel}" Opacity="0.8" />
+                                                                                    </Border>
+                                                                                    <!-- Method · engine · target in one line, so it's the part that shrinks -->
+                                                                                    <TextBlock Grid.Column="3" Text="{Binding Details}" Classes="meta"
+                                                                                               ToolTip.Tip="{Binding Details}" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
+                                                                                               MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4">
+                                                                                        <Button Classes="small" Content="Summary"
+                                                                                                ToolTip.Tip="Commit history for this project and its dependencies since the last deploy"
+                                                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ReleaseSummaryCommand}"
+                                                                                                CommandParameter="{Binding}" />
+                                                                                        <Button Classes="small" Content="{Binding BackupBadge}"
+                                                                                                IsVisible="{Binding SupportsBackup}"
+                                                                                                ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
+                                                                                                Command="{Binding ToggleBackupsCommand}" />
+                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options">
+                                                                                            <Button.Flyout>
+                                                                                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                                                                    <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
+                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="{Binding CredentialsMenuText}" Command="{Binding ToggleCredentialsCommand}"
+                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <Separator IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="Publish engine" ToolTip.Tip="{Binding EngineHint}">
+                                                                                                        <MenuItem Header="dotnet publish" ToggleType="Radio" GroupName="engine"
+                                                                                                                  IsChecked="{Binding IsDotnetEngine, Mode=OneWay}" IsEnabled="{Binding CanUseDotnet}"
+                                                                                                                  Command="{Binding SetEngineCommand}"
+                                                                                                                  CommandParameter="{x:Static models:PublishEngineKind.Dotnet}" />
+                                                                                                        <MenuItem Header="MSBuild" ToggleType="Radio" GroupName="engine"
+                                                                                                                  IsChecked="{Binding IsMsBuildEngine, Mode=OneWay}"
+                                                                                                                  Command="{Binding SetEngineCommand}"
+                                                                                                                  CommandParameter="{x:Static models:PublishEngineKind.MsBuild}" />
+                                                                                                    </MenuItem>
+                                                                                                </MenuFlyout>
+                                                                                            </Button.Flyout>
+                                                                                        </Button>
+                                                                                    </StackPanel>
+                                                                                </Grid>
+
+                                                                                <!-- Credentials: only when needed, or when opened from the ⋯ menu -->
+                                                                                <WrapPanel Grid.Row="1" Grid.Column="1" Margin="18,4,0,1"
+                                                                                           ItemSpacing="6" LineSpacing="4">
+                                                                                    <WrapPanel.IsVisible>
+                                                                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                                                            <Binding Path="RequiresCredentials" />
+                                                                                            <Binding Path="ShowCredentials" />
+                                                                                        </MultiBinding>
+                                                                                    </WrapPanel.IsVisible>
+                                                                                    <TextBox Classes="small" Text="{Binding UserName}" PlaceholderText="username" Width="160" />
+                                                                                    <TextBox Classes="small" Text="{Binding Password}" PlaceholderText="password"
+                                                                                             Width="130" PasswordChar="•" />
+                                                                                    <CheckBox Classes="small" Content="Remember" IsChecked="{Binding RememberPassword}"
+                                                                                              IsVisible="{Binding CanRememberPassword}"
+                                                                                              ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                                                </WrapPanel>
+
+                                                                                <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
+                                                                                                Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"
+                                                                                                IsVisible="{Binding ShowBackups}" />
+                                                                            </Grid>
+                                                                        </Border>
                                                                     </DataTemplate>
-                                                                </ComboBox.ItemTemplate>
-                                                            </ComboBox>
-                                                            <Button Content="Restore" FontSize="11" Padding="6,2"
-                                                                    IsEnabled="{Binding HasBackups}"
-                                                                    ToolTip.Tip="Restore the selected snapshot to the script's target folder (overwrites it)"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
-                                                                    CommandParameter="{Binding SelectedBackup}" />
-                                                            <Button Content="Delete" FontSize="11" Padding="6,2"
-                                                                    IsEnabled="{Binding HasBackups}"
-                                                                    ToolTip.Tip="Delete the selected snapshot"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
-                                                                    CommandParameter="{Binding SelectedBackup}" />
-                                                            <Button Content="↻" FontSize="11" Padding="6,2"
-                                                                    ToolTip.Tip="Refresh the snapshot list"
-                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
-                                                                    CommandParameter="{Binding}" />
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+
+                                                            <!-- Script targets -->
+                                                            <ItemsControl ItemsSource="{Binding ScriptTargets}" IsVisible="{Binding HasScripts}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="vm:ScriptTargetViewModel">
+                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" IsVisible="{Binding IsVisible}">
+                                                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                                                                <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding IsSelected}"
+                                                                                          VerticalAlignment="Center" MinWidth="0" Margin="0,-4,8,-4" />
+
+                                                                                <Grid Grid.Row="0" Grid.Column="1"
+                                                                                      ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                                                    <Panel Grid.Column="0" Classes="status" ToolTip.Tip="{Binding StatusText}">
+                                                                                        <Ellipse IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                                                                 Classes.running="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Running}}"
+                                                                                                 Classes.succeeded="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Succeeded}}"
+                                                                                                 Classes.failed="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Failed}}"
+                                                                                                 Classes.cancelled="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Cancelled}}" />
+                                                                                    </Panel>
+                                                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
+                                                                                    <Border Grid.Column="2" Classes="pill" Background="#33A06CFF">
+                                                                                        <TextBlock Text="Script" Opacity="0.85" />
+                                                                                    </Border>
+                                                                                    <TextBlock Grid.Column="3" Text="{Binding Problem}" Classes="problem"
+                                                                                               IsVisible="{Binding HasProblem}" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding Summary}" Classes="meta"
+                                                                                               ToolTip.Tip="{Binding Summary}" />
+                                                                                    <TextBlock Grid.Column="5" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
+                                                                                               MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4">
+                                                                                        <Button Classes="small" Content="{Binding BackupBadge}"
+                                                                                                IsVisible="{Binding SupportsBackup}"
+                                                                                                ToolTip.Tip="Show/hide saved snapshots of this script's target"
+                                                                                                Command="{Binding ToggleBackupsCommand}" />
+                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Script options"
+                                                                                                Click="OnRowMenuClick">
+                                                                                            <Button.Flyout>
+                                                                                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                                                                    <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
+                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="{Binding CredentialsMenuText}" Command="{Binding ToggleCredentialsCommand}"
+                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <Separator IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="Edit script…" Click="OnEditScriptClick" />
+                                                                                                    <Separator />
+                                                                                                    <MenuItem Header="Remove script…" Click="OnRemoveScriptClick" />
+                                                                                                </MenuFlyout>
+                                                                                            </Button.Flyout>
+                                                                                        </Button>
+                                                                                    </StackPanel>
+                                                                                </Grid>
+
+                                                                                <WrapPanel Grid.Row="1" Grid.Column="1" Margin="18,4,0,1"
+                                                                                           ItemSpacing="6" LineSpacing="4">
+                                                                                    <WrapPanel.IsVisible>
+                                                                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                                                            <Binding Path="RequiresCredentials" />
+                                                                                            <Binding Path="ShowCredentials" />
+                                                                                        </MultiBinding>
+                                                                                    </WrapPanel.IsVisible>
+                                                                                    <TextBox Classes="small" Text="{Binding UserName}" PlaceholderText="username" Width="160" />
+                                                                                    <TextBox Classes="small" Text="{Binding Password}" PlaceholderText="password"
+                                                                                             Width="130" PasswordChar="•" />
+                                                                                    <CheckBox Classes="small" Content="Remember" IsChecked="{Binding RememberPassword}"
+                                                                                              IsVisible="{Binding CanRememberPassword}"
+                                                                                              ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                                                </WrapPanel>
+
+                                                                                <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
+                                                                                                Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"
+                                                                                                IsVisible="{Binding ShowBackups}" />
+                                                                            </Grid>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
                                                         </StackPanel>
-                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />
-                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                                            <Border Background="#33A06CFF" CornerRadius="3" Padding="4,1" VerticalAlignment="Center">
-                                                                <TextBlock Text="Script" FontSize="11" Opacity="0.85" />
-                                                            </Border>
-                                                            <TextBlock Text="{Binding Summary}" Opacity="0.6" VerticalAlignment="Center"
-                                                                       FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="320" />
-                                                            <TextBlock Text="{Binding Problem}" Foreground="#E05561" FontSize="11"
-                                                                       VerticalAlignment="Center" IsVisible="{Binding HasProblem}" />
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Column="2" Text="{Binding ResultText}"
-                                                                   Opacity="0.8" VerticalAlignment="Center" FontSize="11" Margin="0,0,6,0" />
-                                                        <Button Grid.Column="3" Content="Edit" FontSize="11" Padding="6,2" Margin="0,0,4,0"
-                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).EditScriptCommand}"
-                                                                CommandParameter="{Binding}" />
-                                                        <Button Grid.Column="4" Content="✕" FontSize="11" Padding="6,2"
-                                                                ToolTip.Tip="Remove this script"
-                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveScriptCommand}"
-                                                                CommandParameter="{Binding}" />
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    </StackPanel>
-                                </Expander>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                              </Expander>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                                    </Expander>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </ScrollViewer>
                 </Panel>
+                </DockPanel>
             </Border>
 
             <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
 
             <!-- Log console -->
-            <Border Grid.Column="2" Classes="card" Margin="0,4,0,0" Background="#0A000000">
+            <Border Grid.Column="2" Classes="card" Background="#0A000000" Padding="0">
                 <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
-                        <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="Clear" Command="{Binding ClearLogCommand}" />
-                    </Grid>
+                    <Border DockPanel.Dock="Top" Classes="strip">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="small" Content="Clear" Command="{Binding ClearLogCommand}"
+                                    ToolTip.Tip="Clear the output" />
+                        </Grid>
+                    </Border>
                     <ScrollViewer Name="LogScroller">
-                        <ItemsControl ItemsSource="{Binding Log}">
+                        <ItemsControl ItemsSource="{Binding Log}" Margin="8,4,12,4">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:LogLine">
                                     <TextBlock Classes="logline" Classes.error="{Binding IsError}" Text="{Binding Text}" />

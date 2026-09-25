@@ -7,4 +7,7 @@ public readonly record struct DeployConfirmation(bool Confirmed, bool DontAskAga
 public interface IDeployConfirmationService
 {
     Task<DeployConfirmation> ConfirmAsync(IReadOnlyList<string> targets, bool runInParallel);
+
+    /// <summary>Asks the user to confirm a destructive action (e.g. removing a source); true to proceed.</summary>
+    Task<bool> ConfirmActionAsync(string heading, string message, string confirmLabel);
 }

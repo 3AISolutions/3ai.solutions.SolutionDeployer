@@ -25,7 +25,7 @@ public sealed class BackupServiceTests : IDisposable
             new SettingsStore(Path.Combine(_tempDir, $"settings_{Guid.NewGuid():N}.json")),
             new NullCredentialStore(),
             localRootOverride: root);
-        return new BackupService(new ProcessRunner(), new MsDeployLocator(), provider, retention);
+        return new BackupService(new ProcessRunner(), new MsDeployLocator(), provider, () => new BackupRetentionPolicy(retention));
     }
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);

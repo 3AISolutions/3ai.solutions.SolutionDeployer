@@ -11,6 +11,9 @@ public interface IBackupStoreProvider
 
     /// <summary>The store a given destination id refers to (used to read/restore existing snapshots).</summary>
     IBackupStore ForTargetId(string targetId);
+
+    /// <summary>Every configured destination: local disk, then each named remote.</summary>
+    IReadOnlyList<IBackupStore> AllStores();
 }
 
 public sealed class BackupStoreProvider(
@@ -30,6 +33,17 @@ public sealed class BackupStoreProvider(
             ?? throw new InvalidOperationException(
                 $"Backup destination '{targetId}' is not configured. Re-select a destination for this profile.");
 
+        return ForRemote(target);
+    }
+
+    public IReadOnlyList<IBackupStore> AllStores() =>
+    [
+        new LocalBackupStore(localRootOverride),
+        .. settingsStore.Load().RemoteBackupTargets.Select(ForRemote),
+    ];
+
+    private S3BackupStore ForRemote(S3BackupTarget target)
+    {
         var secret = credentialStore.IsAvailable ? credentialStore.Get(target.SecretCredentialKey) : null;
         return new S3BackupStore(target, secret ?? string.Empty);
     }

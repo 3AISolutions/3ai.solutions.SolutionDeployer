@@ -17,7 +17,7 @@ public interface IBackupService
 
     /// <summary>
     /// Captures the current deployment for <paramref name="job"/> into a new snapshot, pruning older
-    /// snapshots beyond the retention limit. For MSDeploy profiles only the files the publish is about to
+    /// snapshots the retention policy expires. For MSDeploy profiles only the files the publish is about to
     /// change are captured. Returns the created backup, or null when there was nothing to back up (e.g.
     /// a first-time deployment, or a publish that changes nothing). Throws on a genuine backup failure.
     /// </summary>
@@ -39,7 +39,16 @@ public interface IBackupService
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes a snapshot (package + manifest). Returns false if it could not be removed.</summary>
+    /// <summary>
+    /// What <see cref="DeleteAsync"/> removes for <paramref name="backup"/>: the snapshot plus every older partial
+    /// snapshot of the same owner, which could no longer be restored without it. Oldest first.
+    /// </summary>
+    Task<IReadOnlyList<DeploymentBackup>> GetDeletionSetAsync(DeploymentBackup backup, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a snapshot (package + manifest) together with the rest of its <see cref="GetDeletionSetAsync"/>,
+    /// oldest first. Returns false if they could not all be removed.
+    /// </summary>
     Task<bool> DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default);
 }
 

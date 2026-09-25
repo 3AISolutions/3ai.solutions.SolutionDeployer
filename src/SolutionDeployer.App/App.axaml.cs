@@ -30,6 +30,7 @@ public partial class App : Application
             services.AddSingleton<IDeploySummaryService, DeploySummaryService>();
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
+            services.AddSingleton<IBackupManagerService, BackupManagerService>();
             services.AddSingleton<IUpdatePromptService, UpdatePromptService>();
             services.AddSingleton<WhatsNewProvider>();
             services.AddSingleton<IWhatsNewService, WhatsNewService>();

@@ -1,0 +1,110 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.BackupManagerWindow"
+        x:DataType="vm:BackupManagerViewModel"
+        Title="Manage backups"
+        Width="820" Height="580" MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.attention">
+            <Setter Property="Foreground" Value="#D98E04" />
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+            <TextBlock Text="Deployment snapshots" Classes="heading" />
+            <TextBlock Text="Every snapshot in every backup destination, by target. Snapshots are only ever removed oldest first, so the ones that stay can still be restored."
+                       Classes="subheading" />
+        </StackPanel>
+
+        <!-- Retention policy -->
+        <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,12" Padding="12,10">
+            <StackPanel Spacing="8">
+                <TextBlock Text="RETENTION POLICY" Classes="caption" />
+                <WrapPanel ItemSpacing="18" LineSpacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Keep the last" VerticalAlignment="Center" />
+                        <NumericUpDown Value="{Binding KeepLast}" Minimum="1" Maximum="1000" Increment="1"
+                                       FormatString="0" Width="110" />
+                        <TextBlock Text="snapshots per target" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox Content="and delete snapshots older than" IsChecked="{Binding MaxAgeEnabled}" />
+                        <NumericUpDown Value="{Binding MaxAgeDays}" Minimum="1" Maximum="3650" Increment="1"
+                                       FormatString="0" Width="110" IsEnabled="{Binding MaxAgeEnabled}" />
+                        <TextBlock Text="days" VerticalAlignment="Center" />
+                    </StackPanel>
+                </WrapPanel>
+                <TextBlock Classes="hint"
+                           Text="Applied to a target after each of its backups, and to everything by “Clean up by policy”. The newest snapshot of a target is always kept." />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding Status}" VerticalAlignment="Center" Margin="0,0,10,0"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
+                <StackPanel Grid.Column="1" Classes="buttons">
+                    <Button Content="Clean up by policy…" Command="{Binding CleanUpByPolicyCommand}" />
+                    <Button Content="Delete ticked…" Command="{Binding DeleteCheckedCommand}" Classes="danger" />
+                    <Button Content="Close" Command="{Binding CloseCommand}" IsCancel="True" IsDefault="True" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- List toolbar -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+            <TextBlock Grid.Column="0" Text="{Binding Summary}" Classes="meta" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Button Classes="small" Content="Tick unused" Command="{Binding SelectUnneededCommand}"
+                        ToolTip.Tip="Tick every target that is orphaned, unknown or now backs up elsewhere" />
+                <Button Classes="small" Content="Refresh" Command="{Binding RefreshCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Errors}" Classes="problem" TextWrapping="Wrap" Margin="0,0,0,6"
+                   IsVisible="{Binding Errors, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Border Classes="card" Padding="2">
+            <Panel>
+                <TextBlock Text="No snapshots found." Opacity="0.5"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding IsEmpty}" />
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Groups}" Margin="6,4,14,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:BackupGroupViewModel">
+                                <Grid ColumnDefinitions="Auto,*,120,110,90,150" ColumnSpacing="10" Margin="0,3">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" ToolTip.Tip="{Binding OwnerTip}">
+                                        <TextBlock Text="{Binding OwnerName}" Classes="name" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding ProjectName}" Classes="meta" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="12" VerticalAlignment="Center"
+                                               Classes.attention="{Binding NeedsAttention}" ToolTip.Tip="{Binding StatusTip}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Destination}" Classes="meta"
+                                               ToolTip.Tip="{Binding Group.StoreDescription}" />
+                                    <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SizeText}" FontSize="12" />
+                                        <TextBlock Text="{Binding CountText}" Classes="meta" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="5" Text="{Binding RangeText}" Classes="meta" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Panel>
+        </Border>
+    </DockPanel>
+</Window>

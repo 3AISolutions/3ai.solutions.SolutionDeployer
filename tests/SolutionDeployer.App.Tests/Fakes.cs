@@ -33,6 +33,11 @@ public sealed class FakeDeployConfirmation : IDeployConfirmationService
 
     public Task<DeployConfirmation> ConfirmAsync(IReadOnlyList<string> targets, bool runInParallel) =>
         Task.FromResult(Next);
+
+    public bool NextAction { get; set; } = true;
+
+    public Task<bool> ConfirmActionAsync(string heading, string message, string confirmLabel) =>
+        Task.FromResult(NextAction);
 }
 
 /// <summary>Inert git-history stub: reports unavailable so post-deploy recording is skipped.</summary>
@@ -60,6 +65,14 @@ public sealed class FakeReleaseSummary : IReleaseSummaryService
 public sealed class FakeRemoteTargets : IRemoteTargetsService
 {
     public Task ShowAsync(SolutionDeployer.Core.Configuration.AppSettings settings) => Task.CompletedTask;
+}
+
+/// <summary>Backup-manager stub; never opens a window and deletes nothing.</summary>
+public sealed class FakeBackupManager : IBackupManagerService
+{
+    public Task<bool> ShowAsync(
+        SolutionDeployer.Core.Configuration.AppSettings settings,
+        IReadOnlyCollection<SolutionDeployer.Core.Backup.BackupOwner> knownOwners) => Task.FromResult(false);
 }
 
 /// <summary>Update-prompt stub; declines by default so tests never trigger an update.</summary>

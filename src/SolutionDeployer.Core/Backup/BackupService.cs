@@ -20,10 +20,11 @@ public sealed class BackupService(
     ProcessRunner processRunner,
     MsDeployLocator msDeployLocator,
     IBackupStoreProvider storeProvider,
-    int retention = 10,
+    Func<BackupRetentionPolicy>? retentionPolicy = null,
     IPublishEngineFactory? engineFactory = null) : IBackupService
 {
-    private readonly int _retention = Math.Max(1, retention);
+    // Read on every prune so a policy change in the settings applies to the next backup.
+    private readonly Func<BackupRetentionPolicy> _retentionPolicy = retentionPolicy ?? (() => new BackupRetentionPolicy());
 
     public bool CanBackUp(BackupOwner owner, out string? reason)
     {
@@ -114,6 +115,7 @@ public sealed class BackupService(
                 ProfileKey = ownerKey,
                 ProfileName = owner.Name,
                 ProjectName = job.Project.Name,
+                OwnerId = owner.Profile?.FilePath ?? owner.Script!.Id,
                 Kind = capture.Kind,
                 CreatedUtc = createdUtc,
                 Sequence = sequence,
@@ -305,11 +307,21 @@ public sealed class BackupService(
         }
     }
 
+    public async Task<IReadOnlyList<DeploymentBackup>> GetDeletionSetAsync(
+        DeploymentBackup backup, CancellationToken cancellationToken = default)
+    {
+        var store = storeProvider.ForTargetId(backup.StorageTargetId);
+        var all = await store.ListAsync(backup.ProfileKey, cancellationToken).ConfigureAwait(false);
+        return BackupRetention.DeletionSet(backup, all);
+    }
+
     public async Task<bool> DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default)
     {
         try
         {
-            await storeProvider.ForTargetId(backup.StorageTargetId).DeleteAsync(backup, cancellationToken).ConfigureAwait(false);
+            var store = storeProvider.ForTargetId(backup.StorageTargetId);
+            foreach (var snapshot in await GetDeletionSetAsync(backup, cancellationToken).ConfigureAwait(false))
+                await store.DeleteAsync(snapshot, cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch
@@ -321,10 +333,12 @@ public sealed class BackupService(
     private async Task PruneAsync(IBackupStore store, string profileKey, Action<OutputLine> onOutput, CancellationToken cancellationToken)
     {
         var all = await store.ListAsync(profileKey, cancellationToken).ConfigureAwait(false);
-        foreach (var stale in all.Skip(_retention))
+        var expired = BackupRetention.SelectExpired(all, _retentionPolicy(), DateTimeOffset.UtcNow);
+        foreach (var (stale, reason) in expired.OrderBy(d => d.Backup.Sequence))
         {
             await store.DeleteAsync(stale, cancellationToken).ConfigureAwait(false);
-            onOutput(OutputLine.Info($"[backup] Pruned old snapshot from {stale.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}."));
+            onOutput(OutputLine.Info(
+                $"[backup] Pruned snapshot #{stale.Sequence} from {stale.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} ({reason})."));
         }
     }
 
@@ -484,10 +498,14 @@ public sealed class BackupService(
     /// </summary>
     private async Task BuildPreviewAsync(PublishJob job, string previewDir, Action<OutputLine> onOutput, CancellationToken cancellationToken)
     {
+        // Trailing slash: the SDK appends each file's relative path straight onto PublishUrl. PublishDir: an
+        // SDK project otherwise leaves its output in bin\...\publish and copies nothing to PublishUrl.
+        var folder = previewDir + Path.DirectorySeparatorChar;
         var properties = new Dictionary<string, string>(job.AdditionalProperties)
         {
             ["WebPublishMethod"] = "FileSystem",
-            ["PublishUrl"] = previewDir,
+            ["PublishUrl"] = folder,
+            ["PublishDir"] = folder,
             ["DeleteExistingFiles"] = "true",
         };
 
@@ -1025,17 +1043,20 @@ public sealed class BackupService(
     private static bool IsTrue(PublishProfile profile, string property) =>
         profile.Properties.TryGetValue(property, out var value) && bool.TryParse(value, out var flag) && flag;
 
-    private static string KeyFor(BackupOwner owner)
+    /// <summary>The folder key an owner's snapshots are stored under, in every destination.</summary>
+    public static string KeyFor(BackupOwner owner)
     {
         // Scripts are keyed by their stable id so renaming one keeps its snapshots.
         if (owner.Script is { } script)
             return $"script_{Sanitize(script.Id)}";
 
         var profile = owner.Profile!;
-        var hash = Convert.ToHexStringLower(
-            SHA256.HashData(Encoding.UTF8.GetBytes(profile.FilePath.ToLowerInvariant())))[..8];
-        return $"{Sanitize(profile.Name)}_{hash}";
+        return $"{Sanitize(profile.Name)}_{PathHash(profile.FilePath)}";
     }
+
+    /// <summary>The profile-path part of a profile's <see cref="KeyFor"/>.</summary>
+    internal static string PathHash(string profileFilePath) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(profileFilePath.ToLowerInvariant())))[..8];
 
     private static string Sanitize(string name)
     {
