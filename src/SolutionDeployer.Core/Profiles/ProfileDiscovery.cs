@@ -4,7 +4,8 @@ using SolutionDeployer.Core.Models;
 namespace SolutionDeployer.Core.Profiles;
 
 /// <summary>
-/// Scans <c>Properties/PublishProfiles</c> (and the project root) for <c>.pubxml</c> and
+/// Scans <c>Properties/PublishProfiles</c>, <c>My Project/PublishProfiles</c> (VB.NET) and
+/// <c>PublishProfiles</c> for <c>.pubxml</c> and
 /// <c>.PublishSettings</c> files and parses their metadata. Passwords are never read.
 /// </summary>
 public sealed class ProfileDiscovery : IProfileDiscovery
@@ -18,6 +19,8 @@ public sealed class ProfileDiscovery : IProfileDiscovery
         var searchDirs = new[]
         {
             Path.Combine(projectDir, "Properties", "PublishProfiles"),
+            // VB.NET projects keep their app-designer folder under "My Project".
+            Path.Combine(projectDir, "My Project", "PublishProfiles"),
             Path.Combine(projectDir, "PublishProfiles"),
         };
 
