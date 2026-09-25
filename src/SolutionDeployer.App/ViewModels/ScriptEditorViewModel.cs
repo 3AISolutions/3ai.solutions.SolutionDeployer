@@ -34,6 +34,9 @@ public partial class ScriptEditorViewModel : ObservableObject
         _scriptPath = draft.ScriptPath;
         _arguments = draft.Arguments ?? string.Empty;
         _workingDirectory = draft.WorkingDirectory ?? string.Empty;
+        _requiresCredentials = draft.RequiresCredentials;
+        _userNameVariable = draft.UserNameVariable;
+        _passwordVariable = draft.PasswordVariable;
         foreach (var (k, v) in draft.Environment)
             EnvVars.Add(new EnvVarRow { Key = k, Value = v });
     }
@@ -55,6 +58,15 @@ public partial class ScriptEditorViewModel : ObservableObject
 
     [ObservableProperty]
     private string _workingDirectory;
+
+    [ObservableProperty]
+    private bool _requiresCredentials;
+
+    [ObservableProperty]
+    private string _userNameVariable;
+
+    [ObservableProperty]
+    private string _passwordVariable;
 
     [ObservableProperty]
     private string? _error;
@@ -113,6 +125,9 @@ public partial class ScriptEditorViewModel : ObservableObject
             ScriptPath = ScriptPath.Trim(),
             Arguments = string.IsNullOrWhiteSpace(Arguments) ? null : Arguments.Trim(),
             WorkingDirectory = string.IsNullOrWhiteSpace(WorkingDirectory) ? null : WorkingDirectory.Trim(),
+            RequiresCredentials = RequiresCredentials,
+            UserNameVariable = string.IsNullOrWhiteSpace(UserNameVariable) ? ScriptTarget.DefaultUserNameVariable : UserNameVariable.Trim(),
+            PasswordVariable = string.IsNullOrWhiteSpace(PasswordVariable) ? ScriptTarget.DefaultPasswordVariable : PasswordVariable.Trim(),
             Environment = EnvVars
                 .Where(e => !string.IsNullOrWhiteSpace(e.Key))
                 .ToDictionary(e => e.Key.Trim(), e => e.Value),

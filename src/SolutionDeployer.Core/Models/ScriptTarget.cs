@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SolutionDeployer.Core.Models;
 
 /// <summary>
@@ -27,6 +29,27 @@ public sealed class ScriptTarget
 
     /// <summary>Extra environment variables exposed to the script (in addition to the SD_* context).</summary>
     public Dictionary<string, string> Environment { get; set; } = new();
+
+    /// <summary>
+    /// When true the row asks for a username/password (like a credentialed publish profile), passed to
+    /// the script in the <see cref="UserNameVariable"/>/<see cref="PasswordVariable"/> environment
+    /// variables. The values themselves are never stored here.
+    /// </summary>
+    public bool RequiresCredentials { get; set; }
+
+    public const string DefaultUserNameVariable = "DEPLOY_USERNAME";
+
+    public const string DefaultPasswordVariable = "DEPLOY_PASSWORD";
+
+    /// <summary>Environment variable that receives the username.</summary>
+    public string UserNameVariable { get; set; } = DefaultUserNameVariable;
+
+    /// <summary>Environment variable that receives the password.</summary>
+    public string PasswordVariable { get; set; } = DefaultPasswordVariable;
+
+    /// <summary>Key for this script's remembered username and OS-stored password.</summary>
+    [JsonIgnore]
+    public string CredentialKey => $"script:{Id}";
 
     /// <summary>Resolves <see cref="ScriptPath"/> to an absolute path using the owning project's directory.</summary>
     public string ResolveScriptPath(string projectDirectory) => Resolve(ScriptPath, projectDirectory);

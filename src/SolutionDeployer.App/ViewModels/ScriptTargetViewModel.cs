@@ -8,16 +8,45 @@ namespace SolutionDeployer.App.ViewModels;
 public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
 {
     // Status and ResultText (below) satisfy ISelectableTarget.
-    public ScriptTargetViewModel(ProjectViewModel parent, ScriptTarget target)
+    public ScriptTargetViewModel(
+        ProjectViewModel parent,
+        ScriptTarget target,
+        string? rememberedUserName = null,
+        string? rememberedPassword = null,
+        bool credentialStoreAvailable = false)
     {
         Parent = parent;
         Target = target;
+        _userName = rememberedUserName ?? string.Empty;
+        CredentialStoreAvailable = credentialStoreAvailable;
+        if (rememberedPassword is not null)
+        {
+            _password = rememberedPassword;
+            _rememberPassword = true;
+        }
         RefreshAvailability();
     }
 
     public ProjectViewModel Parent { get; }
 
     public ScriptTarget Target { get; private set; }
+
+    /// <summary>Whether a secure OS credential store exists (controls the "remember" checkbox).</summary>
+    public bool CredentialStoreAvailable { get; }
+
+    public bool RequiresCredentials => Target.RequiresCredentials;
+
+    /// <summary>Show the remember-password checkbox only for credentialed scripts when storage exists.</summary>
+    public bool CanRememberPassword => RequiresCredentials && CredentialStoreAvailable;
+
+    [ObservableProperty]
+    private string _userName = string.Empty;
+
+    [ObservableProperty]
+    private string _password = string.Empty;
+
+    [ObservableProperty]
+    private bool _rememberPassword;
 
     public string Name => Target.Name;
 
@@ -67,8 +96,19 @@ public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
         OnPropertyChanged(nameof(ScriptPath));
         OnPropertyChanged(nameof(Arguments));
         OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(RequiresCredentials));
+        OnPropertyChanged(nameof(CanRememberPassword));
         RefreshAvailability();
     }
+
+    /// <summary>Credentials passed to the script in its configured username/password variables (none unless opted in).</summary>
+    public PublishCredentials BuildCredentials() => !RequiresCredentials
+        ? PublishCredentials.None
+        : new()
+        {
+            UserName = string.IsNullOrWhiteSpace(UserName) ? null : UserName,
+            Password = string.IsNullOrEmpty(Password) ? null : Password,
+        };
 
     /// <summary>Flags a missing script file or a missing interpreter for display.</summary>
     public void RefreshAvailability()

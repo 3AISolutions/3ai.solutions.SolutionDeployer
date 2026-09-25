@@ -52,7 +52,10 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, DeployRecord> DeployHistory { get; set; } = new();
 
-    /// <summary>Remembered usernames keyed by profile file path (no passwords).</summary>
+    /// <summary>
+    /// Remembered usernames keyed by profile file path or <see cref="Models.ScriptTarget.CredentialKey"/>
+    /// (no passwords).
+    /// </summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
     /// <summary>GitHub "owner/repo" used by the updater to find releases.</summary>

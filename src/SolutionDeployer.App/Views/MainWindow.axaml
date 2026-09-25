@@ -239,8 +239,19 @@
                                             <DataTemplate x:DataType="vm:ScriptTargetViewModel">
                                                 <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
                                                         IsVisible="{Binding IsVisible}">
-                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
+                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                        <CheckBox Grid.Column="0" Grid.RowSpan="2" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4"
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0"
+                                                                    IsVisible="{Binding RequiresCredentials}">
+                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11" />
+                                                            <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
+                                                                     PasswordChar="•" />
+                                                            <CheckBox Content="Remember" IsChecked="{Binding RememberPassword}"
+                                                                      FontSize="11" VerticalAlignment="Center"
+                                                                      IsVisible="{Binding CanRememberPassword}"
+                                                                      ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                        </StackPanel>
                                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                             <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />
                                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />

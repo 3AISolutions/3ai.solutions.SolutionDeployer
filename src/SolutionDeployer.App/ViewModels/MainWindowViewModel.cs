@@ -29,6 +29,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IRemoteTargetsService _remoteTargets;
     private readonly IUpdatePromptService _updatePrompt;
     private readonly IWhatsNewService _whatsNew;
+    private readonly IDeploySummaryService _deploySummary;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -50,7 +51,8 @@ public partial class MainWindowViewModel : ObservableObject
         IReleaseSummaryService releaseSummary,
         IRemoteTargetsService remoteTargets,
         IUpdatePromptService updatePrompt,
-        IWhatsNewService whatsNew)
+        IWhatsNewService whatsNew,
+        IDeploySummaryService deploySummary)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -67,6 +69,7 @@ public partial class MainWindowViewModel : ObservableObject
         _remoteTargets = remoteTargets;
         _updatePrompt = updatePrompt;
         _whatsNew = whatsNew;
+        _deploySummary = deploySummary;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -310,6 +313,9 @@ public partial class MainWindowViewModel : ObservableObject
         var project = script.Parent;
         project.ScriptTargets.Remove(script);
         project.NotifyScriptsChanged();
+        _settings.RememberedUserNames.Remove(script.Target.CredentialKey);
+        if (_credentialStore.IsAvailable)
+            _credentialStore.Delete(script.Target.CredentialKey);
         PersistScriptTargets(project);
         OnPropertyChanged(nameof(SelectedCount));
         SaveCurrentSelection();
@@ -383,7 +389,12 @@ public partial class MainWindowViewModel : ObservableObject
                 }
 
                 foreach (var script in _settings.GetScriptTargets(project.ProjectPath))
-                    projectVm.ScriptTargets.Add(new ScriptTargetViewModel(projectVm, script));
+                {
+                    _settings.RememberedUserNames.TryGetValue(script.CredentialKey, out var rememberedUser);
+                    var rememberedPassword = credentialsAvailable ? _credentialStore.Get(script.CredentialKey) : null;
+                    projectVm.ScriptTargets.Add(new ScriptTargetViewModel(
+                        projectVm, script, rememberedUser, rememberedPassword, credentialsAvailable));
+                }
 
                 vm.Projects.Add(projectVm);
             }
@@ -637,7 +648,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (!string.IsNullOrWhiteSpace(profileVm.UserName))
                 _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
 
-            PersistPassword(profileVm);
+            PersistPassword(profileVm.Profile.FilePath, profileVm.RememberPassword, profileVm.Password);
         }
 
         foreach (var scriptVm in selectedScripts)
@@ -648,12 +659,21 @@ public partial class MainWindowViewModel : ObservableObject
                 Script = scriptVm.Target,
                 Engine = PublishEngineKind.Script,
                 Configuration = "Release",
+                Credentials = scriptVm.BuildCredentials(),
             };
             jobs.Add(job);
             jobsByTarget[job.Id] = scriptVm;
 
             scriptVm.Status = PublishStatus.Pending;
             scriptVm.ResultText = string.Empty;
+
+            if (scriptVm.RequiresCredentials)
+            {
+                if (!string.IsNullOrWhiteSpace(scriptVm.UserName))
+                    _settings.RememberedUserNames[scriptVm.Target.CredentialKey] = scriptVm.UserName;
+
+                PersistPassword(scriptVm.Target.CredentialKey, scriptVm.RememberPassword, scriptVm.Password);
+            }
         }
 
         _settingsStore.Save(_settings);
@@ -661,6 +681,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsRunning = true;
         _runCts = new CancellationTokenSource();
         var startedJobs = new HashSet<string>();
+        DeploySummaryViewModel? summary = null;
         Log.Add(LogLine.System($"── Deploying {jobs.Count} target(s) ({(RunInParallel ? "parallel" : "sequential")}) ──"));
         StatusMessage = $"Deploying {jobs.Count} target(s)…";
 
@@ -692,6 +713,7 @@ public partial class MainWindowViewModel : ObservableObject
                 BackupBeforePublish = BackupBeforePublish,
             };
             var results = await _deploymentRunner.RunAsync(jobs, options, OnOutput, OnJobCompleted, _runCts.Token);
+            summary = DeploySummaryViewModel.From(jobs, results);
 
             var ok = results.Count(r => r.IsSuccess);
             var failed = results.Count - ok;
@@ -728,6 +750,9 @@ public partial class MainWindowViewModel : ObservableObject
             _runCts?.Dispose();
             _runCts = null;
         }
+
+        if (summary is not null)
+            await _deploySummary.ShowAsync(summary);
     }
 
     private bool CanCancel() => IsRunning;
@@ -948,16 +973,16 @@ public partial class MainWindowViewModel : ObservableObject
             Log.RemoveAt(0);
     }
 
-    /// <summary>Saves or clears a profile's password in the OS secure store based on its opt-in flag.</summary>
-    private void PersistPassword(ProfileViewModel profileVm)
+    /// <summary>Saves or clears a profile's/script's password in the OS secure store based on its opt-in flag.</summary>
+    private void PersistPassword(string key, bool remember, string password)
     {
         if (!_credentialStore.IsAvailable)
             return;
 
-        if (profileVm.RememberPassword && !string.IsNullOrEmpty(profileVm.Password))
-            _credentialStore.Set(profileVm.Profile.FilePath, profileVm.Password);
+        if (remember && !string.IsNullOrEmpty(password))
+            _credentialStore.Set(key, password);
         else
-            _credentialStore.Delete(profileVm.Profile.FilePath);
+            _credentialStore.Delete(key);
     }
 
     // ---- Startup ----------------------------------------------------------

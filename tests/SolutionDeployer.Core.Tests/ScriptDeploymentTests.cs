@@ -186,4 +186,58 @@ public sealed class ScriptDeploymentTests
             File.Delete(temp);
         }
     }
+
+    [Fact]
+    public async Task Script_engine_passes_credentials_via_environment_only()
+    {
+        if (!OperatingSystem.IsWindows())
+            return; // Uses a .cmd for a dependency-free, deterministic interpreter.
+
+        var dir = Path.Combine(Path.GetTempPath(), $"sd_script_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(dir, "creds.cmd"),
+                "@echo user=%DEPLOY_USERNAME% pass=%DEPLOY_PASSWORD% custom=%MY_USER%\r\n@exit /b 0\r\n");
+
+            var project = new DeploymentProject { Name = "App", ProjectPath = Path.Combine(dir, "App.csproj") };
+            var engine = new ScriptPublishEngine(new ProcessRunner());
+            var credentials = new PublishCredentials { UserName = "deployer", Password = "s3cret" };
+
+            var output = new List<OutputLine>();
+            var result = await engine.PublishAsync(new PublishJob
+            {
+                Project = project,
+                Engine = PublishEngineKind.Script,
+                Credentials = credentials,
+                Script = new ScriptTarget { Name = "creds", ScriptPath = "creds.cmd", RequiresCredentials = true },
+            }, output.Add);
+
+            Assert.Equal(PublishStatus.Succeeded, result.Status);
+            Assert.Contains(output, o => o.Text.Contains("user=deployer pass=s3cret"));
+            Assert.DoesNotContain("s3cret", result.CommandLine);
+
+            // Custom variable names are honoured.
+            var custom = new List<OutputLine>();
+            await engine.PublishAsync(new PublishJob
+            {
+                Project = project,
+                Engine = PublishEngineKind.Script,
+                Credentials = credentials,
+                Script = new ScriptTarget
+                {
+                    Name = "creds",
+                    ScriptPath = "creds.cmd",
+                    RequiresCredentials = true,
+                    UserNameVariable = "MY_USER",
+                },
+            }, custom.Add);
+
+            Assert.Contains(custom, o => o.Text.Contains("custom=deployer"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

@@ -70,6 +70,18 @@ public sealed class FakeUpdatePrompt : IUpdatePromptService
     public Task<bool> ConfirmUpdateAsync(string? version, string? notes) => Task.FromResult(Next);
 }
 
+/// <summary>Post-deploy summary stub; records what would have been shown instead of opening a window.</summary>
+public sealed class FakeDeploySummary : IDeploySummaryService
+{
+    public SolutionDeployer.App.ViewModels.DeploySummaryViewModel? Last { get; private set; }
+
+    public Task ShowAsync(SolutionDeployer.App.ViewModels.DeploySummaryViewModel summary)
+    {
+        Last = summary;
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>What's-new stub; never opens a window and reports no notes.</summary>
 public sealed class FakeWhatsNew : IWhatsNewService
 {

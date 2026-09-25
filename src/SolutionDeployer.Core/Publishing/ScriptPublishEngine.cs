@@ -98,6 +98,16 @@ public sealed class ScriptPublishEngine(ProcessRunner processRunner) : IPublishE
             ["SD_CONFIGURATION"] = job.Configuration,
             ["SD_DEPLOYER_VERSION"] = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0",
         };
+
+        // Credentials go through the environment, never the (logged) command line.
+        if (!string.IsNullOrEmpty(job.Credentials.UserName))
+            env[VariableOrDefault(script.UserNameVariable, ScriptTarget.DefaultUserNameVariable)] = job.Credentials.UserName;
+        if (!string.IsNullOrEmpty(job.Credentials.Password))
+            env[VariableOrDefault(script.PasswordVariable, ScriptTarget.DefaultPasswordVariable)] = job.Credentials.Password;
+
         return env;
     }
+
+    private static string VariableOrDefault(string? name, string fallback) =>
+        string.IsNullOrWhiteSpace(name) ? fallback : name.Trim();
 }

@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.DeploySummaryWindow"
+        x:DataType="vm:DeploySummaryViewModel"
+        Title="Deployment summary"
+        Width="560" Height="420" MinWidth="420" MinHeight="260"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.result">
+            <Setter Property="Foreground" Value="#E05561" />
+        </Style>
+        <Style Selector="TextBlock.result.success">
+            <Setter Property="Foreground" Value="#2EA043" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+        <Button DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,12,0,0"
+                Content="Close" Command="{Binding CloseCommand}" Classes="accent" IsDefault="True" IsCancel="True" />
+
+        <Border BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Projects}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DeploySummaryProject">
+                            <StackPanel Margin="0,4,0,8" Spacing="2">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                               Classes="result" Classes.success="{Binding IsSuccess}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontWeight="SemiBold"
+                                               Classes="result" Classes.success="{Binding IsSuccess}" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Targets}" Margin="16,0,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:DeploySummaryTarget">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" Margin="0,0,12,0"
+                                                           Classes="result" Classes.success="{Binding IsSuccess}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Detail}" TextWrapping="Wrap"
+                                                           Classes="result" Classes.success="{Binding IsSuccess}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>
