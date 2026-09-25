@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SolutionDeployer.Core.Models;
+using SolutionDeployer.Core.Projects;
 
 namespace SolutionDeployer.Core.Publishing;
 
@@ -24,6 +25,20 @@ public sealed class DotnetPublishEngine(ProcessRunner processRunner) : IPublishE
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken = default)
     {
+        if (ProjectFormat.IsClassicWebProject(job.Project.ProjectPath))
+        {
+            // dotnet has no Web Application targets, so it would fail with MSB4019 after a restore anyway.
+            var message = $"{job.Project.Name} is a classic ASP.NET (.NET Framework) project, which dotnet can't build. Use the msbuild engine.";
+            onOutput(OutputLine.Error(message));
+            return new PublishResult
+            {
+                JobId = job.Id,
+                DisplayName = job.DisplayName,
+                Status = PublishStatus.Failed,
+                ErrorMessage = message,
+            };
+        }
+
         var (props, redactedProps) = PublishArguments.BuildProperties(job);
 
         var args = new List<string>

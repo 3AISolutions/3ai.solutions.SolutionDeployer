@@ -3,12 +3,12 @@ using SolutionDeployer.Core.Backup;
 namespace SolutionDeployer.App.ViewModels;
 
 /// <summary>
-/// A single restorable snapshot shown under a profile's "Restore" menu. Carries its owning profile so
-/// a restore can reuse that profile's current credentials.
+/// A single restorable snapshot shown under a profile's or script's "Restore" menu. Carries its owning
+/// row so a restore can reuse that row's current credentials.
 /// </summary>
-public sealed class BackupEntryViewModel(ProfileViewModel parent, DeploymentBackup backup)
+public sealed class BackupEntryViewModel(BackupHostViewModel parent, DeploymentBackup backup)
 {
-    public ProfileViewModel Parent { get; } = parent;
+    public BackupHostViewModel Parent { get; } = parent;
 
     public DeploymentBackup Backup { get; } = backup;
 

@@ -4,7 +4,7 @@
         x:Class="SolutionDeployer.App.Views.ScriptEditorWindow"
         x:DataType="vm:ScriptEditorViewModel"
         Title="{Binding Title}"
-        Width="620" Height="540" MinWidth="520" MinHeight="460"
+        Width="640" Height="720" MinWidth="520" MinHeight="460"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
@@ -55,6 +55,33 @@
                         <TextBlock Grid.Column="2" Text="Password var" VerticalAlignment="Center" Margin="0,0,6,0" />
                         <TextBox Grid.Column="3" Text="{Binding PasswordVariable}" PlaceholderText="DEPLOY_PASSWORD" />
                     </Grid>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Backup" FontWeight="SemiBold" />
+                    <ComboBox ItemsSource="{Binding BackupKinds}" SelectedItem="{Binding SelectedBackupKind}" MinWidth="240" />
+                    <TextBlock Text="{Binding BackupDescription}"
+                               FontSize="11" Opacity="0.6" TextWrapping="Wrap" IsVisible="{Binding HasBackup}" />
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" IsVisible="{Binding HasBackup}">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Server" VerticalAlignment="Center" Margin="0,0,8,4"
+                                   IsVisible="{Binding IsWebDeployBackup}" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BackupServerUrl}" Margin="0,0,0,4"
+                                 PlaceholderText="https://host:8172/msdeploy.axd" IsVisible="{Binding IsWebDeployBackup}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Folder" VerticalAlignment="Center" Margin="0,0,8,4"
+                                   IsVisible="{Binding NeedsBackupFolder}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding BackupPath}" Margin="0,0,0,4"
+                                 PlaceholderText="D:\Hosted_Projects\MyApp  (or an IIS site name)" IsVisible="{Binding NeedsBackupFolder}" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Before restore" VerticalAlignment="Center" Margin="0,0,8,4"
+                                   IsVisible="{Binding UsesServer}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding PreRestoreCommand}" Margin="0,0,0,4"
+                                 PlaceholderText="optional, runs on the server, e.g. net stop MyService" IsVisible="{Binding UsesServer}" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="After restore" VerticalAlignment="Center" Margin="0,0,8,0"
+                                   IsVisible="{Binding UsesServer}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding PostRestoreCommand}"
+                                 PlaceholderText="optional, runs on the server, e.g. net start MyService" IsVisible="{Binding UsesServer}" />
+                    </Grid>
+                    <TextBlock Text="Web Deploy uses the script's username and password (tick &quot;Requires credentials&quot;)."
+                               FontSize="11" Opacity="0.6" TextWrapping="Wrap" IsVisible="{Binding UsesServer}" />
                 </StackPanel>
 
                 <StackPanel Spacing="4">

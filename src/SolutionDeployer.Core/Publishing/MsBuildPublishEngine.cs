@@ -1,4 +1,5 @@
 using SolutionDeployer.Core.Models;
+using SolutionDeployer.Core.Projects;
 
 namespace SolutionDeployer.Core.Publishing;
 
@@ -48,26 +49,15 @@ public sealed class MsBuildPublishEngine(ProcessRunner processRunner, MsBuildLoc
         }
 
         var (props, redactedProps) = PublishArguments.BuildProperties(job);
+        var head = BuildTargetArguments(job);
 
-        var args = new List<string>
-        {
-            job.Project.ProjectPath,
-            "/restore",
-            "/t:Publish",
-            $"/p:Configuration={job.Configuration}",
-        };
+        var args = new List<string>(head);
         args.AddRange(props);
         args.Add("/v:minimal");
         args.Add("/m");
 
-        var redacted = new List<string>
-        {
-            "msbuild",
-            job.Project.ProjectPath,
-            "/restore",
-            "/t:Publish",
-            $"/p:Configuration={job.Configuration}",
-        };
+        var redacted = new List<string> { "msbuild" };
+        redacted.AddRange(head);
         redacted.AddRange(redactedProps);
         redacted.Add("/v:minimal");
         redacted.Add("/m");
@@ -103,5 +93,35 @@ public sealed class MsBuildPublishEngine(ProcessRunner processRunner, MsBuildLoc
                 ErrorMessage = "Cancelled.",
             };
         }
+    }
+
+    /// <summary>
+    /// What to build and how to trigger the publish. SDK projects publish through <c>/t:Publish</c>.
+    /// A classic web project ignores that target, so it publishes through <c>DeployOnBuild</c> instead —
+    /// built via its solution (just that project's target) when there is one, because the solution maps
+    /// e.g. a "Release-Admin" configuration onto the configurations its referenced projects actually have.
+    /// </summary>
+    internal static List<string> BuildTargetArguments(PublishJob job)
+    {
+        var project = job.Project;
+        if (!ProjectFormat.IsClassicWebProject(project.ProjectPath))
+            return [project.ProjectPath, "/restore", "/t:Publish", $"/p:Configuration={job.Configuration}"];
+
+        if (project.SolutionPath is { } solution && project.SolutionTargetName is { } target)
+        {
+            // A solution platform, e.g. "Any CPU" (with a space) rather than a project's "AnyCPU".
+            var platform = job.Profile?.Properties.GetValueOrDefault("LastUsedPlatform");
+            return
+            [
+                solution,
+                "/restore",
+                $"/t:{target}",
+                $"/p:Configuration={job.Configuration}",
+                $"/p:Platform={(string.IsNullOrWhiteSpace(platform) ? "Any CPU" : platform)}",
+                "/p:DeployOnBuild=true",
+            ];
+        }
+
+        return [project.ProjectPath, "/restore", $"/p:Configuration={job.Configuration}", "/p:DeployOnBuild=true"];
     }
 }

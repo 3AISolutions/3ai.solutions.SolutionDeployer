@@ -35,7 +35,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ProcessRunner>(),
             sp.GetRequiredService<MsDeployLocator>(),
             sp.GetRequiredService<IBackupStoreProvider>(),
-            retention: sp.GetRequiredService<SettingsStore>().Load().BackupRetention));
+            retention: sp.GetRequiredService<SettingsStore>().Load().BackupRetention,
+            engineFactory: sp.GetRequiredService<IPublishEngineFactory>()));
 
         services.AddSingleton<IGitHistoryService, GitHistoryService>();
 

@@ -16,6 +16,12 @@ public partial class EnvVarRow : ObservableObject
     private string _value = string.Empty;
 }
 
+/// <summary>A choice in the script editor's backup picker.</summary>
+public sealed record BackupKindOption(ScriptBackupKind Kind, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>Backs the add/edit-script modal. Produces a <see cref="ScriptTarget"/> on save.</summary>
 public partial class ScriptEditorViewModel : ObservableObject
 {
@@ -37,6 +43,11 @@ public partial class ScriptEditorViewModel : ObservableObject
         _requiresCredentials = draft.RequiresCredentials;
         _userNameVariable = draft.UserNameVariable;
         _passwordVariable = draft.PasswordVariable;
+        _selectedBackupKind = BackupKinds.First(k => k.Kind == draft.BackupKind);
+        _backupServerUrl = draft.BackupServerUrl ?? string.Empty;
+        _backupPath = draft.BackupPath ?? string.Empty;
+        _preRestoreCommand = draft.PreRestoreCommand ?? string.Empty;
+        _postRestoreCommand = draft.PostRestoreCommand ?? string.Empty;
         foreach (var (k, v) in draft.Environment)
             EnvVars.Add(new EnvVarRow { Key = k, Value = v });
     }
@@ -67,6 +78,51 @@ public partial class ScriptEditorViewModel : ObservableObject
 
     [ObservableProperty]
     private string _passwordVariable;
+
+    public static IReadOnlyList<BackupKindOption> BackupKinds { get; } =
+    [
+        new(ScriptBackupKind.None, "No backup"),
+        new(ScriptBackupKind.WebDeploy, "Server folder (Web Deploy)"),
+        new(ScriptBackupKind.Folder, "Local / network folder"),
+        new(ScriptBackupKind.WhatIf, "Only what the script will change (-WhatIf)"),
+    ];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWebDeployBackup), nameof(HasBackup), nameof(IsWhatIfBackup),
+        nameof(NeedsBackupFolder), nameof(UsesServer), nameof(BackupDescription))]
+    private BackupKindOption _selectedBackupKind;
+
+    public bool IsWebDeployBackup => SelectedBackupKind.Kind == ScriptBackupKind.WebDeploy;
+
+    public bool IsWhatIfBackup => SelectedBackupKind.Kind == ScriptBackupKind.WhatIf;
+
+    public bool HasBackup => SelectedBackupKind.Kind != ScriptBackupKind.None;
+
+    /// <summary>The folder field applies to a server folder or a local folder; a -WhatIf script reports its own.</summary>
+    public bool NeedsBackupFolder => SelectedBackupKind.Kind is ScriptBackupKind.WebDeploy or ScriptBackupKind.Folder;
+
+    /// <summary>Backups that go through Web Deploy: they use the script's credentials and can run restore commands.</summary>
+    public bool UsesServer => SelectedBackupKind.Kind is ScriptBackupKind.WebDeploy or ScriptBackupKind.WhatIf;
+
+    public string BackupDescription => SelectedBackupKind.Kind switch
+    {
+        ScriptBackupKind.WhatIf =>
+            "Before the real run the script is run with -WhatIf and reports, per server, the files it would change " +
+            "(\"SD-WHATIF-TARGET:\" lines followed by msdeploy's change list). Only those files are saved; restore rolls the deploy back.",
+        _ => "With \"Backup before publish\" on, the whole folder is snapshotted before the script runs, and can be restored from the script's row.",
+    };
+
+    [ObservableProperty]
+    private string _backupServerUrl;
+
+    [ObservableProperty]
+    private string _backupPath;
+
+    [ObservableProperty]
+    private string _preRestoreCommand;
+
+    [ObservableProperty]
+    private string _postRestoreCommand;
 
     [ObservableProperty]
     private string? _error;
@@ -112,6 +168,21 @@ public partial class ScriptEditorViewModel : ObservableObject
             Error = "Choose a script file.";
             return;
         }
+        if (IsWhatIfBackup && !ScriptPath.Trim().EndsWith(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            Error = "-WhatIf backups need a PowerShell (.ps1) script with a -WhatIf switch.";
+            return;
+        }
+        if (IsWebDeployBackup && (string.IsNullOrWhiteSpace(BackupServerUrl) || string.IsNullOrWhiteSpace(BackupPath)))
+        {
+            Error = "Enter the Web Deploy server URL and the folder to back up.";
+            return;
+        }
+        if (SelectedBackupKind.Kind == ScriptBackupKind.Folder && string.IsNullOrWhiteSpace(BackupPath))
+        {
+            Error = "Enter the folder to back up.";
+            return;
+        }
         if (!ScriptInterpreters.IsSupported(ScriptPath))
         {
             Error = $"Unsupported script type. Supported: {string.Join(", ", ScriptInterpreters.SupportedExtensions)}.";
@@ -128,6 +199,11 @@ public partial class ScriptEditorViewModel : ObservableObject
             RequiresCredentials = RequiresCredentials,
             UserNameVariable = string.IsNullOrWhiteSpace(UserNameVariable) ? ScriptTarget.DefaultUserNameVariable : UserNameVariable.Trim(),
             PasswordVariable = string.IsNullOrWhiteSpace(PasswordVariable) ? ScriptTarget.DefaultPasswordVariable : PasswordVariable.Trim(),
+            BackupKind = SelectedBackupKind.Kind,
+            BackupServerUrl = IsWebDeployBackup ? BackupServerUrl.Trim() : null,
+            BackupPath = NeedsBackupFolder ? BackupPath.Trim() : null,
+            PreRestoreCommand = UsesServer && !string.IsNullOrWhiteSpace(PreRestoreCommand) ? PreRestoreCommand.Trim() : null,
+            PostRestoreCommand = UsesServer && !string.IsNullOrWhiteSpace(PostRestoreCommand) ? PostRestoreCommand.Trim() : null,
             Environment = EnvVars
                 .Where(e => !string.IsNullOrWhiteSpace(e.Key))
                 .ToDictionary(e => e.Key.Trim(), e => e.Value),

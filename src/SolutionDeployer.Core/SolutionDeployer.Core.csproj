@@ -13,4 +13,8 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.8" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SolutionDeployer.Core.Tests" />
+  </ItemGroup>
+
 </Project>

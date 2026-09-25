@@ -46,6 +46,8 @@ public sealed class SolutionParser(IProfileDiscovery profileDiscovery) : ISoluti
             {
                 Name = Path.GetFileNameWithoutExtension(projectPath),
                 ProjectPath = projectPath,
+                SolutionPath = fullPath,
+                SolutionTargetName = SolutionTargetName(projectModel),
                 Profiles = profiles,
             });
         }
@@ -57,5 +59,33 @@ public sealed class SolutionParser(IProfileDiscovery profileDiscovery) : ISoluti
                 .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList(),
         };
+    }
+
+    // The characters MSBuild replaces with '_' when naming a solution's per-project targets.
+    private static readonly char[] TargetNameCharsToCleanse = ['%', '$', '@', ';', '.', '(', ')', '\''];
+
+    /// <summary>
+    /// The target MSBuild generates for a project when building a solution: its solution folders and
+    /// name, joined with '\', each cleansed the way MSBuild does (e.g. <c>eBooking\SpiderNet_eBooking</c>).
+    /// </summary>
+    internal static string SolutionTargetName(SolutionProjectModel project)
+    {
+        var segments = new List<string> { Cleanse(project.ActualDisplayName) };
+        for (var folder = project.Parent; folder is not null; folder = folder.Parent)
+            segments.Insert(0, Cleanse(folder.Name));
+
+        return string.Join('\\', segments);
+
+        static string Cleanse(string name)
+        {
+            var chars = name.ToCharArray();
+            for (var i = 0; i < chars.Length; i++)
+            {
+                if (Array.IndexOf(TargetNameCharsToCleanse, chars[i]) >= 0)
+                    chars[i] = '_';
+            }
+
+            return new string(chars);
+        }
     }
 }

@@ -18,7 +18,7 @@ public sealed class DeploymentRunOptions
     /// <summary>In sequential mode, stop after the first failed job.</summary>
     public bool StopOnFirstFailure { get; init; }
 
-    /// <summary>Snapshot the current deployment before each profile publish (where supported).</summary>
+    /// <summary>Snapshot the current deployment before each publish or script run (where supported).</summary>
     public bool BackupBeforePublish { get; init; }
 }
 
@@ -114,15 +114,19 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
     }
 
     /// <summary>
-    /// Best-effort backup before a publish. Skips script jobs and unsupported profiles, and treats a
+    /// Best-effort backup before a publish. Skips scripts without a backup target and unsupported
+    /// profiles, and treats a
     /// backup failure as a logged warning rather than aborting the publish.
     /// </summary>
     private async Task TryBackupAsync(PublishJob job, Action<OutputLine> sink, CancellationToken cancellationToken)
     {
-        if (job.Profile is null)
+        var owner = BackupOwner.ForJob(job);
+
+        // A script without a backup target simply isn't backed up — not worth a "skipped" line every run.
+        if (owner is null || owner.Script?.BackupKind == ScriptBackupKind.None)
             return;
 
-        if (!backupService.CanBackUp(job.Profile, job.Project.ProjectDirectory, out var reason))
+        if (!backupService.CanBackUp(owner, out var reason))
         {
             sink(OutputLine.Info($"[backup] Skipped — {reason}"));
             return;

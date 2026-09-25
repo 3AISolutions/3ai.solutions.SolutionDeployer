@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SolutionDeployer.Core.Models;
+using SolutionDeployer.Core.Projects;
 
 namespace SolutionDeployer.App.ViewModels;
 
@@ -15,6 +16,7 @@ public partial class ProjectViewModel : ObservableObject
     public ProjectViewModel(DeploymentProject project)
     {
         Project = project;
+        IsClassicWebProject = ProjectFormat.IsClassicWebProject(project.ProjectPath);
         Profiles = new ObservableCollection<ProfileViewModel>();
         ScriptTargets = new ObservableCollection<ScriptTargetViewModel>();
 
@@ -28,6 +30,12 @@ public partial class ProjectViewModel : ObservableObject
     }
 
     public DeploymentProject Project { get; }
+
+    /// <summary>
+    /// A classic (.NET Framework) ASP.NET project: only full msbuild can build it — <c>dotnet</c> lacks
+    /// the Web Application targets (MSB4019).
+    /// </summary>
+    public bool IsClassicWebProject { get; }
 
     public string Name => Project.Name;
 

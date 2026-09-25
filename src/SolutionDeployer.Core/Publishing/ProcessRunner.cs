@@ -15,13 +15,39 @@ public sealed class ProcessRunner
     /// Runs <paramref name="fileName"/> with the given arguments. Output lines are reported via
     /// <paramref name="onOutput"/> on background threads. Honours cancellation by killing the tree.
     /// </summary>
-    public async Task<ProcessRunResult> RunAsync(
+    public Task<ProcessRunResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string? workingDirectory,
         Action<OutputLine> onOutput,
         IReadOnlyDictionary<string, string>? environment = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RunCoreAsync(fileName, psi =>
+        {
+            foreach (var arg in arguments)
+                psi.ArgumentList.Add(arg);
+        }, workingDirectory, onOutput, environment, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="RunAsync"/>, but passes <paramref name="commandLine"/> through verbatim — for tools
+    /// such as msdeploy that parse their own command line and reject standard per-argument quoting.
+    /// </summary>
+    public Task<ProcessRunResult> RunRawAsync(
+        string fileName,
+        string commandLine,
+        string? workingDirectory,
+        Action<OutputLine> onOutput,
+        IReadOnlyDictionary<string, string>? environment = null,
+        CancellationToken cancellationToken = default) =>
+        RunCoreAsync(fileName, psi => psi.Arguments = commandLine, workingDirectory, onOutput, environment, cancellationToken);
+
+    private async Task<ProcessRunResult> RunCoreAsync(
+        string fileName,
+        Action<ProcessStartInfo> applyArguments,
+        string? workingDirectory,
+        Action<OutputLine> onOutput,
+        IReadOnlyDictionary<string, string>? environment,
+        CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
         {
@@ -35,8 +61,7 @@ public sealed class ProcessRunner
             StandardErrorEncoding = Encoding.UTF8,
         };
 
-        foreach (var arg in arguments)
-            psi.ArgumentList.Add(arg);
+        applyArguments(psi);
 
         if (environment is not null)
         {

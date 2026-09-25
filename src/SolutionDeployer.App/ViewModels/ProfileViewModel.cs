@@ -1,21 +1,14 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.ViewModels;
-
-/// <summary>A selectable backup destination (local disk or a named remote) for the per-profile picker.</summary>
-public sealed record BackupDestinationOption(string Id, string Name)
-{
-    public override string ToString() => Name;
-}
 
 /// <summary>
 /// A selectable publish profile. Carries its own engine choice and (non-persisted) credentials so
 /// that any combination of profiles can be queued with per-target settings.
 /// </summary>
-public partial class ProfileViewModel : ObservableObject, ISelectableTarget
+public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
 {
     public ProfileViewModel(
         ProjectViewModel parent,
@@ -27,7 +20,7 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
     {
         Parent = parent;
         Profile = profile;
-        _engine = defaultEngine;
+        _engine = parent.IsClassicWebProject ? PublishEngineKind.MsBuild : defaultEngine;
         _userName = rememberedUserName ?? profile.UserName ?? string.Empty;
         CredentialStoreAvailable = credentialStoreAvailable;
         if (rememberedPassword is not null)
@@ -47,7 +40,9 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
 
     public PublishProfile Profile { get; }
 
-    public string Name => Profile.Name;
+    public override string Name => Profile.Name;
+
+    public override BackupOwner BackupOwner => BackupOwner.ForProfile(Profile, Parent.Project.ProjectDirectory);
 
     public string FormatLabel => Profile.Format == PublishProfileFormat.PublishSettings ? ".PublishSettings" : ".pubxml";
 
@@ -57,73 +52,15 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
 
     public bool RequiresCredentials => Profile.RequiresCredentials;
 
-    /// <summary>Whether this profile's deployment target can be snapshotted/restored.</summary>
-    [ObservableProperty]
-    private bool _supportsBackup;
+    private static readonly IReadOnlyList<PublishEngineKind> AllEngines = [PublishEngineKind.Dotnet, PublishEngineKind.MsBuild];
+    private static readonly IReadOnlyList<PublishEngineKind> MsBuildOnly = [PublishEngineKind.MsBuild];
 
-    /// <summary>Previously-captured snapshots for this profile, newest first.</summary>
-    public ObservableCollection<BackupEntryViewModel> Backups { get; } = [];
+    /// <summary>Engines selectable for this profile (bound by the row's ComboBox).</summary>
+    public IReadOnlyList<PublishEngineKind> Engines => Parent.IsClassicWebProject ? MsBuildOnly : AllEngines;
 
-    public bool HasBackups => Backups.Count > 0;
-
-    public int BackupCount => Backups.Count;
-
-    /// <summary>Compact badge text shown next to "Summary" (e.g. "📸 3").</summary>
-    public string BackupBadge => $"📸 {Backups.Count}";
-
-    /// <summary>The snapshot restore row is collapsed by default; the badge toggles it per profile.</summary>
-    [ObservableProperty]
-    private bool _showBackups;
-
-    /// <summary>Available backup destinations (local + named remotes) for this profile's picker.</summary>
-    public ObservableCollection<BackupDestinationOption> BackupDestinations { get; } = [];
-
-    private bool _applyingDestination;
-
-    [ObservableProperty]
-    private BackupDestinationOption? _selectedDestination;
-
-    /// <summary>Raised when the user changes the destination (not when it's set programmatically).</summary>
-    public event Action<ProfileViewModel>? BackupDestinationChanged;
-
-    partial void OnSelectedDestinationChanged(BackupDestinationOption? value)
-    {
-        if (!_applyingDestination)
-            BackupDestinationChanged?.Invoke(this);
-    }
-
-    public void SetDestinations(IEnumerable<BackupDestinationOption> options, string selectedId)
-    {
-        _applyingDestination = true;
-        BackupDestinations.Clear();
-        foreach (var option in options)
-            BackupDestinations.Add(option);
-        SelectedDestination = BackupDestinations.FirstOrDefault(d => d.Id == selectedId)
-                              ?? BackupDestinations.FirstOrDefault();
-        _applyingDestination = false;
-    }
-
-    /// <summary>The snapshot chosen in the restore picker.</summary>
-    [ObservableProperty]
-    private BackupEntryViewModel? _selectedBackup;
-
-    [RelayCommand]
-    private void ToggleBackups() => ShowBackups = !ShowBackups;
-
-    public void SetBackups(IEnumerable<BackupEntryViewModel> entries)
-    {
-        Backups.Clear();
-        foreach (var entry in entries)
-            Backups.Add(entry);
-        SelectedBackup = Backups.FirstOrDefault();
-        OnPropertyChanged(nameof(HasBackups));
-        OnPropertyChanged(nameof(BackupCount));
-        OnPropertyChanged(nameof(BackupBadge));
-    }
-
-    /// <summary>Engines selectable per profile (bound by the row's ComboBox).</summary>
-    public static IReadOnlyList<PublishEngineKind> Engines { get; } =
-        [PublishEngineKind.Dotnet, PublishEngineKind.MsBuild];
+    public string EngineHint => Parent.IsClassicWebProject
+        ? "Classic ASP.NET (.NET Framework) project — only msbuild can build it"
+        : "dotnet publish, or full msbuild (needed for .NET Framework / classic Web Deploy projects)";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusGlyph))]
@@ -163,9 +100,19 @@ public partial class ProfileViewModel : ObservableObject, ISelectableTarget
     partial void OnIsSelectedChanged(bool value) => Parent.RefreshSelectionState();
 
     // Persist engine changes too (re-selecting a target with a different engine should be remembered).
-    partial void OnEngineChanged(PublishEngineKind value) => Parent.RaiseStateChanged();
+    partial void OnEngineChanged(PublishEngineKind value)
+    {
+        // A saved selection may still say "dotnet" for a classic web project; that can never build.
+        if (Parent.IsClassicWebProject && value != PublishEngineKind.MsBuild)
+        {
+            Engine = PublishEngineKind.MsBuild;
+            return;
+        }
 
-    public PublishCredentials BuildCredentials() => new()
+        Parent.RaiseStateChanged();
+    }
+
+    public override PublishCredentials BuildCredentials() => new()
     {
         UserName = string.IsNullOrWhiteSpace(UserName) ? null : UserName,
         Password = string.IsNullOrEmpty(Password) ? null : Password,

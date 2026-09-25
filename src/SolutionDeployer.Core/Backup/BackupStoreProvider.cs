@@ -6,8 +6,8 @@ namespace SolutionDeployer.Core.Backup;
 /// <summary>Resolves the configured <see cref="IBackupStore"/> for a profile or a stored target id.</summary>
 public interface IBackupStoreProvider
 {
-    /// <summary>The store a profile's new snapshots should go to (its configured destination).</summary>
-    IBackupStore ForProfile(PublishProfile profile);
+    /// <summary>The store an owner's new snapshots should go to (its configured destination).</summary>
+    IBackupStore ForOwner(BackupOwner owner);
 
     /// <summary>The store a given destination id refers to (used to read/restore existing snapshots).</summary>
     IBackupStore ForTargetId(string targetId);
@@ -18,8 +18,8 @@ public sealed class BackupStoreProvider(
     ICredentialStore credentialStore,
     string? localRootOverride = null) : IBackupStoreProvider
 {
-    public IBackupStore ForProfile(PublishProfile profile) =>
-        ForTargetId(settingsStore.Load().GetBackupTargetId(profile.FilePath));
+    public IBackupStore ForOwner(BackupOwner owner) =>
+        ForTargetId(settingsStore.Load().GetBackupTargetId(owner.SettingsKey));
 
     public IBackupStore ForTargetId(string targetId)
     {

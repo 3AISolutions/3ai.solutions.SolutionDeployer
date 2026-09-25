@@ -282,7 +282,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (result is null)
             return;
 
-        project.ScriptTargets.Add(new ScriptTargetViewModel(project, result));
+        project.ScriptTargets.Add(CreateScriptViewModel(project, result));
         project.NotifyScriptsChanged();
         PersistScriptTargets(project);
         OnPropertyChanged(nameof(SelectedCount));
@@ -301,7 +301,21 @@ public partial class MainWindowViewModel : ObservableObject
 
         script.Update(result);
         PersistScriptTargets(script.Parent);
+        ConfigureBackup(script); // the backup target may have been added, changed or removed
         StatusMessage = $"Updated script '{result.Name}'.";
+    }
+
+    /// <summary>Builds a script row with its remembered credentials and backup state.</summary>
+    private ScriptTargetViewModel CreateScriptViewModel(ProjectViewModel project, ScriptTarget script)
+    {
+        var credentialsAvailable = _credentialStore.IsAvailable;
+        _settings.RememberedUserNames.TryGetValue(script.CredentialKey, out var rememberedUser);
+        var rememberedPassword = credentialsAvailable ? _credentialStore.Get(script.CredentialKey) : null;
+
+        var scriptVm = new ScriptTargetViewModel(project, script, rememberedUser, rememberedPassword, credentialsAvailable);
+        scriptVm.BackupDestinationChanged += OnBackupDestinationChanged;
+        ConfigureBackup(scriptVm);
+        return scriptVm;
     }
 
     [RelayCommand]
@@ -378,23 +392,13 @@ public partial class MainWindowViewModel : ObservableObject
                     var rememberedPassword = credentialsAvailable ? _credentialStore.Get(profile.FilePath) : null;
                     var profileVm = new ProfileViewModel(
                         projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
-                    profileVm.SupportsBackup = _backupService.CanBackUp(profile, project.ProjectDirectory, out _);
-                    if (profileVm.SupportsBackup)
-                    {
-                        profileVm.SetDestinations(BuildDestinationOptions(), _settings.GetBackupTargetId(profile.FilePath));
-                        profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
-                        _ = LoadBackupsAsync(profileVm); // fire-and-forget so a remote listing never blocks load
-                    }
+                    profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
+                    ConfigureBackup(profileVm);
                     projectVm.Profiles.Add(profileVm);
                 }
 
                 foreach (var script in _settings.GetScriptTargets(project.ProjectPath))
-                {
-                    _settings.RememberedUserNames.TryGetValue(script.CredentialKey, out var rememberedUser);
-                    var rememberedPassword = credentialsAvailable ? _credentialStore.Get(script.CredentialKey) : null;
-                    projectVm.ScriptTargets.Add(new ScriptTargetViewModel(
-                        projectVm, script, rememberedUser, rememberedPassword, credentialsAvailable));
-                }
+                    projectVm.ScriptTargets.Add(CreateScriptViewModel(projectVm, script));
 
                 vm.Projects.Add(projectVm);
             }
@@ -724,8 +728,8 @@ public partial class MainWindowViewModel : ObservableObject
 
             // A backup taken during the run produces a new snapshot — refresh the restore lists.
             if (BackupBeforePublish)
-                foreach (var profileVm in selectedProfiles)
-                    _ = LoadBackupsAsync(profileVm);
+                foreach (var host in selectedProfiles.Cast<BackupHostViewModel>().Concat(selectedScripts))
+                    _ = LoadBackupsAsync(host);
 
             // Record/log the git history for profiles that deployed successfully (informative only).
             var succeeded = results
@@ -767,32 +771,49 @@ public partial class MainWindowViewModel : ObservableObject
     // ---- Backup / restore -------------------------------------------------
 
     /// <summary>
-    /// Repopulates a profile's snapshot list from its configured destination. Best-effort: a remote
-    /// (S3) listing may fail or be slow, so callers fire-and-forget and errors surface in the badge.
+    /// Works out whether a profile/script row can be backed up and, if so, fills its destination picker
+    /// and snapshot list. Re-run after a script's backup settings change.
     /// </summary>
-    private async Task LoadBackupsAsync(ProfileViewModel profileVm)
+    private void ConfigureBackup(BackupHostViewModel host)
     {
-        if (!profileVm.SupportsBackup)
+        host.SupportsBackup = _backupService.CanBackUp(host.BackupOwner, out _);
+        if (!host.SupportsBackup)
+        {
+            host.SetBackups([]);
+            host.ShowBackups = false;
+            return;
+        }
+
+        host.SetDestinations(BuildDestinationOptions(), _settings.GetBackupTargetId(host.BackupOwner.SettingsKey));
+        _ = LoadBackupsAsync(host); // fire-and-forget so a remote listing never blocks load
+    }
+
+    /// <summary>
+    /// Repopulates a row's snapshot list from its configured destination. Best-effort: a remote (S3)
+    /// listing may fail or be slow, so callers fire-and-forget and errors surface in the badge.
+    /// </summary>
+    private async Task LoadBackupsAsync(BackupHostViewModel host)
+    {
+        if (!host.SupportsBackup)
             return;
 
         try
         {
-            var projectDir = profileVm.Parent.Project.ProjectDirectory;
-            var backups = await _backupService.ListAsync(profileVm.Profile, projectDir);
-            profileVm.SetBackups(backups.Select(b => new BackupEntryViewModel(profileVm, b)));
+            var backups = await _backupService.ListAsync(host.BackupOwner);
+            host.SetBackups(backups.Select(b => new BackupEntryViewModel(host, b)));
         }
         catch (Exception ex)
         {
-            profileVm.SetBackups([]);
-            StatusMessage = $"Could not list snapshots for {profileVm.Name}: {ex.Message}";
+            host.SetBackups([]);
+            StatusMessage = $"Could not list snapshots for {host.Name}: {ex.Message}";
         }
     }
 
     [RelayCommand]
-    private async Task RefreshBackupsAsync(ProfileViewModel? profile)
+    private async Task RefreshBackupsAsync(BackupHostViewModel? host)
     {
-        if (profile is not null)
-            await LoadBackupsAsync(profile);
+        if (host is not null)
+            await LoadBackupsAsync(host);
     }
 
     private List<BackupDestinationOption> BuildDestinationOptions()
@@ -802,28 +823,32 @@ public partial class MainWindowViewModel : ObservableObject
         return options;
     }
 
-    private void OnBackupDestinationChanged(ProfileViewModel profileVm)
+    private void OnBackupDestinationChanged(BackupHostViewModel host)
     {
-        var id = profileVm.SelectedDestination?.Id ?? S3BackupTarget.LocalId;
-        _settings.SetBackupTargetId(profileVm.Profile.FilePath, id);
+        var id = host.SelectedDestination?.Id ?? S3BackupTarget.LocalId;
+        _settings.SetBackupTargetId(host.BackupOwner.SettingsKey, id);
         _settingsStore.Save(_settings);
-        StatusMessage = $"{profileVm.Name} backups → {profileVm.SelectedDestination?.Name ?? "Local disk"}.";
-        _ = LoadBackupsAsync(profileVm);
+        StatusMessage = $"{host.Name} backups → {host.SelectedDestination?.Name ?? "Local disk"}.";
+        _ = LoadBackupsAsync(host);
     }
 
-    /// <summary>Re-populates every profile's destination picker after the remote list changes.</summary>
+    private IEnumerable<BackupHostViewModel> AllBackupHosts() =>
+        Sources.SelectMany(s => s.Projects)
+            .SelectMany(p => p.Profiles.Cast<BackupHostViewModel>().Concat(p.ScriptTargets));
+
+    /// <summary>Re-populates every row's destination picker after the remote list changes.</summary>
     private void RefreshAllBackupDestinations()
     {
         var options = BuildDestinationOptions();
-        foreach (var profileVm in Sources.SelectMany(s => s.Projects).SelectMany(p => p.Profiles).Where(p => p.SupportsBackup))
-            profileVm.SetDestinations(options, _settings.GetBackupTargetId(profileVm.Profile.FilePath));
+        foreach (var host in AllBackupHosts().Where(h => h.SupportsBackup))
+            host.SetDestinations(options, _settings.GetBackupTargetId(host.BackupOwner.SettingsKey));
     }
 
     [RelayCommand]
     private async Task ManageBackupTargetsAsync()
     {
         await _remoteTargets.ShowAsync(_settings);
-        // The user may have added/removed remotes — refresh the per-profile pickers.
+        // The user may have added/removed remotes — refresh the per-row pickers.
         RefreshAllBackupDestinations();
     }
 
@@ -833,30 +858,28 @@ public partial class MainWindowViewModel : ObservableObject
         if (entry is null)
             return;
 
-        var profileVm = entry.Parent;
-        var projectDir = profileVm.Parent.Project.ProjectDirectory;
+        var host = entry.Parent;
 
         IsRunning = true;
         _runCts = new CancellationTokenSource();
-        Log.Add(LogLine.System($"── Restoring {profileVm.Name} from {entry.Backup.DisplayName} ──"));
-        StatusMessage = $"Restoring {profileVm.Name}…";
+        Log.Add(LogLine.System($"── Restoring {host.Name} from {entry.Backup.DisplayName} ──"));
+        StatusMessage = $"Restoring {host.Name}…";
 
         void Sink(OutputLine line) =>
-            Dispatcher.UIThread.Post(() => AppendLog(LogLine.From(profileVm.Name, line)));
+            Dispatcher.UIThread.Post(() => AppendLog(LogLine.From(host.Name, line)));
 
         try
         {
             await _backupService.RestoreAsync(
                 entry.Backup,
-                profileVm.Profile,
-                projectDir,
-                profileVm.BuildCredentials(),
+                host.BackupOwner,
+                host.BuildCredentials(),
                 allowUntrustedCertificate: true,
                 Sink,
                 _runCts.Token);
 
-            StatusMessage = $"Restored {profileVm.Name}.";
-            Log.Add(LogLine.System($"── Restored {profileVm.Name} ──"));
+            StatusMessage = $"Restored {host.Name}.";
+            Log.Add(LogLine.System($"── Restored {host.Name} ──"));
         }
         catch (OperationCanceledException)
         {
@@ -882,18 +905,18 @@ public partial class MainWindowViewModel : ObservableObject
         if (entry is null)
             return;
 
-        var profileVm = entry.Parent;
+        var host = entry.Parent;
         if (await _backupService.DeleteAsync(entry.Backup))
         {
-            Log.Add(LogLine.System($"Deleted snapshot {entry.Backup.DisplayName} for {profileVm.Name}."));
-            StatusMessage = $"Deleted snapshot for {profileVm.Name}.";
+            Log.Add(LogLine.System($"Deleted snapshot {entry.Backup.DisplayName} for {host.Name}."));
+            StatusMessage = $"Deleted snapshot for {host.Name}.";
         }
         else
         {
             StatusMessage = "Could not delete that snapshot.";
         }
 
-        await LoadBackupsAsync(profileVm);
+        await LoadBackupsAsync(host);
     }
 
     // ---- Release summary (git history) ------------------------------------

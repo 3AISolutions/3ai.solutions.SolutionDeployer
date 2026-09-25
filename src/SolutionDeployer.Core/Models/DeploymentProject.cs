@@ -14,6 +14,15 @@ public sealed class DeploymentProject
     /// <summary>Absolute path to the directory containing the project file.</summary>
     public string ProjectDirectory => Path.GetDirectoryName(ProjectPath)!;
 
+    /// <summary>The solution the project was loaded from, or null when it was added on its own.</summary>
+    public string? SolutionPath { get; init; }
+
+    /// <summary>
+    /// The project's MSBuild target inside <see cref="SolutionPath"/> (e.g. <c>Web\My_App</c>), used to
+    /// build just this project through the solution so its configuration mapping applies.
+    /// </summary>
+    public string? SolutionTargetName { get; init; }
+
     /// <summary>Publish profiles discovered for this project.</summary>
     public IReadOnlyList<PublishProfile> Profiles { get; init; } = [];
 

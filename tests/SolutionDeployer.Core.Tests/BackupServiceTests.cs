@@ -88,6 +88,45 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public void Script_without_backup_target_cannot_be_backed_up()
+    {
+        var owner = BackupOwner.ForScript(new ScriptTarget { Name = "deploy" }, _tempDir);
+
+        Assert.False(_service.CanBackUp(owner, out var reason));
+        Assert.NotNull(reason);
+    }
+
+    [Fact]
+    public async Task Script_folder_backup_and_restore_round_trip()
+    {
+        var dest = Path.Combine(_tempDir, "service");
+        Directory.CreateDirectory(dest);
+        await File.WriteAllTextAsync(Path.Combine(dest, "app.exe.config"), "v1");
+
+        var script = new ScriptTarget { Name = "deploy", ScriptPath = "deploy.ps1", BackupKind = ScriptBackupKind.Folder, BackupPath = "service" };
+        var owner = BackupOwner.ForScript(script, _tempDir);
+        Assert.True(_service.CanBackUp(owner, out _));
+
+        var job = new PublishJob
+        {
+            Project = new DeploymentProject { Name = "App", ProjectPath = Path.Combine(_tempDir, "App.csproj") },
+            Script = script,
+            Engine = PublishEngineKind.Script,
+        };
+        var backup = await _service.BackUpAsync(job, _ => { });
+        Assert.NotNull(backup);
+
+        // Renaming the script keeps its snapshots (they're keyed by id).
+        script.Name = "renamed";
+        Assert.Single(await _service.ListAsync(BackupOwner.ForScript(script, _tempDir)));
+
+        await File.WriteAllTextAsync(Path.Combine(dest, "app.exe.config"), "v2");
+        await _service.RestoreAsync(backup!, owner, PublishCredentials.None, true, _ => { });
+
+        Assert.Equal("v1", await File.ReadAllTextAsync(Path.Combine(dest, "app.exe.config")));
+    }
+
+    [Fact]
     public async Task FileSystem_backup_and_restore_round_trip()
     {
         var dest = Path.Combine(_tempDir, "dest");

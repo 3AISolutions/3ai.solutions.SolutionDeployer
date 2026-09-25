@@ -1,11 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
 
 namespace SolutionDeployer.App.ViewModels;
 
 /// <summary>A selectable script-deployment row under a project.</summary>
-public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
+public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTarget
 {
     // Status and ResultText (below) satisfy ISelectableTarget.
     public ScriptTargetViewModel(
@@ -48,7 +49,9 @@ public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
     [ObservableProperty]
     private bool _rememberPassword;
 
-    public string Name => Target.Name;
+    public override string Name => Target.Name;
+
+    public override BackupOwner BackupOwner => BackupOwner.ForScript(Target, Parent.ProjectDirectory);
 
     public string ScriptPath => Target.ScriptPath;
 
@@ -102,7 +105,7 @@ public partial class ScriptTargetViewModel : ObservableObject, ISelectableTarget
     }
 
     /// <summary>Credentials passed to the script in its configured username/password variables (none unless opted in).</summary>
-    public PublishCredentials BuildCredentials() => !RequiresCredentials
+    public override PublishCredentials BuildCredentials() => !RequiresCredentials
         ? PublishCredentials.None
         : new()
         {

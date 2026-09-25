@@ -47,9 +47,38 @@ public sealed class ScriptTarget
     /// <summary>Environment variable that receives the password.</summary>
     public string PasswordVariable { get; set; } = DefaultPasswordVariable;
 
+    /// <summary>
+    /// What to snapshot before the script runs (the app can't tell where a script deploys to). The whole
+    /// folder is captured; restore makes it match the snapshot again.
+    /// </summary>
+    public ScriptBackupKind BackupKind { get; set; } = ScriptBackupKind.None;
+
+    /// <summary>Web Deploy endpoint for <see cref="ScriptBackupKind.WebDeploy"/>, e.g. <c>https://host:8172/msdeploy.axd</c>.</summary>
+    public string? BackupServerUrl { get; set; }
+
+    /// <summary>
+    /// The folder to snapshot: the remote content path (site name or physical path) for Web Deploy, or a
+    /// local/UNC folder (relative paths resolve against the project dir) for <see cref="ScriptBackupKind.Folder"/>.
+    /// </summary>
+    public string? BackupPath { get; set; }
+
+    /// <summary>Optional command run on the server before a restore (e.g. <c>net stop MyService</c>).</summary>
+    public string? PreRestoreCommand { get; set; }
+
+    /// <summary>Optional command run on the server after a restore (e.g. <c>net start MyService</c>).</summary>
+    public string? PostRestoreCommand { get; set; }
+
     /// <summary>Key for this script's remembered username and OS-stored password.</summary>
     [JsonIgnore]
     public string CredentialKey => $"script:{Id}";
+
+    /// <summary>A copy of this target that runs with different arguments (e.g. an added <c>-WhatIf</c>).</summary>
+    public ScriptTarget WithArguments(string? arguments)
+    {
+        var copy = (ScriptTarget)MemberwiseClone();
+        copy.Arguments = arguments;
+        return copy;
+    }
 
     /// <summary>Resolves <see cref="ScriptPath"/> to an absolute path using the owning project's directory.</summary>
     public string ResolveScriptPath(string projectDirectory) => Resolve(ScriptPath, projectDirectory);

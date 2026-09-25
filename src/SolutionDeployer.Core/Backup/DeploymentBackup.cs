@@ -10,6 +10,47 @@ public enum BackupKind
 
     /// <summary>Zipped from / extracted to a local or UNC folder.</summary>
     FileSystem,
+
+    /// <summary>
+    /// Only the server files a Web Deploy publish was about to update or delete, plus the list of files
+    /// it was about to add. Restoring rolls that one deployment back.
+    /// </summary>
+    MsDeployPartial,
+
+    /// <summary>
+    /// Like <see cref="MsDeployPartial"/>, but for a script, which may deploy to several Web Deploy
+    /// targets: see <see cref="DeploymentBackup.Targets"/>. The package holds one inner package per target.
+    /// </summary>
+    ScriptPartial,
+}
+
+/// <summary>What a <see cref="BackupKind.ScriptPartial"/> snapshot saved from one Web Deploy target.</summary>
+public sealed class BackupTargetChanges
+{
+    /// <summary>
+    /// msdeploy <c>computerName</c> of the target the files were saved from, e.g.
+    /// <c>https://host:8172/msdeploy.axd?site=MySite</c>.
+    /// </summary>
+    public required string ComputerName { get; init; }
+
+    /// <summary>
+    /// Other servers running the same application, whose <c>-WhatIf</c> reported exactly the same changes: the
+    /// files are saved once (from <see cref="ComputerName"/>) and the restore is applied to every one of them.
+    /// </summary>
+    public IReadOnlyList<string> ReplicaComputerNames { get; init; } = [];
+
+    /// <summary>Every server this entry is restored to.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> AllComputerNames => [ComputerName, .. ReplicaComputerNames];
+
+    /// <summary>Server paths the deploy was about to update or delete (in this target's inner package).</summary>
+    public IReadOnlyList<string> SavedPaths { get; init; } = [];
+
+    /// <summary>Server paths the deploy was about to add.</summary>
+    public IReadOnlyList<string> AddedPaths { get; init; } = [];
+
+    /// <summary>The inner package's name inside the snapshot zip; null when nothing had to be saved.</summary>
+    public string? PackageEntry { get; init; }
 }
 
 /// <summary>
@@ -60,6 +101,29 @@ public sealed class DeploymentBackup
     /// <summary>The server/site or folder the snapshot came from, for display only.</summary>
     public string? Target { get; init; }
 
+    /// <summary>
+    /// <see cref="BackupKind.MsDeployPartial"/> only: server paths (as msdeploy names them) the deploy was
+    /// about to update or delete. These are what the package holds.
+    /// </summary>
+    public IReadOnlyList<string> SavedPaths { get; init; } = [];
+
+    /// <summary><see cref="BackupKind.MsDeployPartial"/> only: server paths the deploy was about to add.</summary>
+    public IReadOnlyList<string> AddedPaths { get; init; } = [];
+
+    /// <summary><see cref="BackupKind.ScriptPartial"/> only: what was saved from each target the script deploys to.</summary>
+    public IReadOnlyList<BackupTargetChanges> Targets { get; init; } = [];
+
+    /// <summary>e.g. "4 saved, 1 added" for a partial snapshot; empty otherwise.</summary>
+    [JsonIgnore]
+    public string ChangeText => Kind switch
+    {
+        BackupKind.MsDeployPartial => $" · {SavedPaths.Count} saved, {AddedPaths.Count} added",
+        BackupKind.ScriptPartial =>
+            $" · {Targets.Sum(t => t.SavedPaths.Count)} saved, {Targets.Sum(t => t.AddedPaths.Count)} added" +
+            (Targets.Sum(t => t.AllComputerNames.Count) is var servers && servers > 1 ? $" on {servers} servers" : string.Empty),
+        _ => string.Empty,
+    };
+
     [JsonIgnore]
     public string SizeText => SizeBytes switch
     {
@@ -71,5 +135,5 @@ public sealed class DeploymentBackup
 
     /// <summary>e.g. "#3 · 2026-06-19 14:05:31 · 12.4 MB". The leading #N keeps same-second snapshots distinct.</summary>
     [JsonIgnore]
-    public string DisplayName => $"#{Sequence} · {CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} · {SizeText}";
+    public string DisplayName => $"#{Sequence} · {CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} · {SizeText}{ChangeText}";
 }

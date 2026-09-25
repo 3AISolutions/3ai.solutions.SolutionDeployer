@@ -177,7 +177,8 @@
                                                         <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                                                                     Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
                                                             <ComboBox ItemsSource="{Binding Engines}"
-                                                                      SelectedItem="{Binding Engine}" MinWidth="90" FontSize="11" />
+                                                                      SelectedItem="{Binding Engine}" MinWidth="90" FontSize="11"
+                                                                      ToolTip.Tip="{Binding EngineHint}" />
                                                             <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
                                                                      IsVisible="{Binding RequiresCredentials}" />
                                                             <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
@@ -213,7 +214,7 @@
                                                             </ComboBox>
                                                             <Button Content="Restore" FontSize="11" Padding="6,2"
                                                                     IsEnabled="{Binding HasBackups}"
-                                                                    ToolTip.Tip="Restore the selected snapshot to this target (overwrites current deployed files)"
+                                                                    ToolTip.Tip="Roll this target back to how it was before the selected snapshot's deploy (a Web Deploy rollback also undoes every newer deploy)"
                                                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
                                                                     CommandParameter="{Binding SelectedBackup}" />
                                                             <Button Content="Delete" FontSize="11" Padding="6,2"
@@ -239,18 +240,59 @@
                                             <DataTemplate x:DataType="vm:ScriptTargetViewModel">
                                                 <Border BorderBrush="#22808080" BorderThickness="0,0,0,1" Padding="2,6"
                                                         IsVisible="{Binding IsVisible}">
-                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                        <CheckBox Grid.Column="0" Grid.RowSpan="2" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
+                                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                        <CheckBox Grid.Column="0" Grid.RowSpan="3" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" />
                                                         <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4"
-                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0"
-                                                                    IsVisible="{Binding RequiresCredentials}">
-                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11" />
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                                                            <StackPanel.IsVisible>
+                                                                <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                                                                    <Binding Path="RequiresCredentials" />
+                                                                    <Binding Path="SupportsBackup" />
+                                                                </MultiBinding>
+                                                            </StackPanel.IsVisible>
+                                                            <TextBox Text="{Binding UserName}" PlaceholderText="username" Width="130" FontSize="11"
+                                                                     IsVisible="{Binding RequiresCredentials}" />
                                                             <TextBox Text="{Binding Password}" PlaceholderText="password" Width="130" FontSize="11"
-                                                                     PasswordChar="•" />
+                                                                     PasswordChar="•" IsVisible="{Binding RequiresCredentials}" />
                                                             <CheckBox Content="Remember" IsChecked="{Binding RememberPassword}"
                                                                       FontSize="11" VerticalAlignment="Center"
                                                                       IsVisible="{Binding CanRememberPassword}"
                                                                       ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
+                                                            <Button Content="{Binding BackupBadge}" FontSize="11" Padding="6,2"
+                                                                    IsVisible="{Binding SupportsBackup}"
+                                                                    ToolTip.Tip="Show/hide saved snapshots of this script's target folder"
+                                                                    Command="{Binding ToggleBackupsCommand}" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="4"
+                                                                    Orientation="Horizontal" Spacing="6" Margin="0,3,0,0"
+                                                                    IsVisible="{Binding ShowBackups}">
+                                                            <TextBlock Text="Store:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
+                                                            <ComboBox ItemsSource="{Binding BackupDestinations}" SelectedItem="{Binding SelectedDestination, Mode=TwoWay}"
+                                                                      MinWidth="120" FontSize="11"
+                                                                      ToolTip.Tip="Where this script's snapshots are stored (local disk or a configured remote)" />
+                                                            <TextBlock Text="Restore:" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
+                                                            <ComboBox ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
+                                                                      MinWidth="200" FontSize="11" PlaceholderText="No snapshots yet">
+                                                                <ComboBox.ItemTemplate>
+                                                                    <DataTemplate x:DataType="vm:BackupEntryViewModel">
+                                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" />
+                                                                    </DataTemplate>
+                                                                </ComboBox.ItemTemplate>
+                                                            </ComboBox>
+                                                            <Button Content="Restore" FontSize="11" Padding="6,2"
+                                                                    IsEnabled="{Binding HasBackups}"
+                                                                    ToolTip.Tip="Restore the selected snapshot to the script's target folder (overwrites it)"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
+                                                                    CommandParameter="{Binding SelectedBackup}" />
+                                                            <Button Content="Delete" FontSize="11" Padding="6,2"
+                                                                    IsEnabled="{Binding HasBackups}"
+                                                                    ToolTip.Tip="Delete the selected snapshot"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
+                                                                    CommandParameter="{Binding SelectedBackup}" />
+                                                            <Button Content="↻" FontSize="11" Padding="6,2"
+                                                                    ToolTip.Tip="Refresh the snapshot list"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
+                                                                    CommandParameter="{Binding}" />
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                             <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" Width="14" />

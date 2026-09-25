@@ -19,6 +19,15 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     `ScriptPublishEngine` (runs a `ScriptTarget`: interpreter inferred by `ScriptInterpreters`, args
     split by `CommandLine`, `SD_*` context env). `ProcessRunner` streams output; `DeploymentRunner`
     runs a batch of `PublishJob`s (each a profile **or** a script; sequential or parallel).
+  - `Backup/BackupService` snapshots a `BackupOwner` (profile or script) before publishing. MSDeploy
+    profiles get a *partial* snapshot: a preview FileSystem publish to temp, `msdeploy -whatif
+    -useCheckSum` (parsed by `MsDeployChangeSet`), then only the updated/deleted paths are pulled via a
+    manifest; restore removes added paths and rolls back every newer snapshot first. Scripts get a full
+    snapshot of their configured folder, or (`ScriptBackupKind.WhatIf`) are first run with `-WhatIf` and
+    must print `SD-WHATIF-TARGET: <computerName>` + msdeploy change lines + `Total changes: N` per target
+    (`ScriptWhatIfReport`); targets reporting identical changes are saved once and restored to all.
+  - `MsBuildPublishEngine` publishes classic (non-SDK) web projects via `DeployOnBuild` through their
+    solution (`/t:<SolutionTargetName>`) — `/t:Publish` is ClickOnce there and silently skips them.
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**
 - **`src/SolutionDeployer.App`** — Avalonia MVVM (CommunityToolkit.Mvvm). DI is wired in
   `App.axaml.cs`. `Services/UpdateService` wraps Velopack. `Program.cs` calls `VelopackApp.Build().Run()`
