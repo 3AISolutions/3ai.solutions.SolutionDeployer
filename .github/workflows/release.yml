@@ -31,7 +31,9 @@ jobs:
             rid: win-x64
             exe: SolutionDeployer.App.exe
             icon: src/SolutionDeployer.App/Assets/app-icon.ico
-          - os: ubuntu-latest
+          # Pinned (like the arm64 leg) so the ubuntu-latest → 26.04 migration doesn't
+          # silently raise the glibc the AppImage is built against.
+          - os: ubuntu-24.04
             rid: linux-x64
             exe: SolutionDeployer.App
             icon: src/SolutionDeployer.App/Assets/app-icon.png
