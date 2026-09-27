@@ -259,10 +259,16 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
         CancellationToken cancellationToken)
     {
         var owner = BackupOwner.ForJob(job);
-
-        // A script without a backup target simply isn't backed up — not worth a "skipped" line every run.
-        if (owner is null || owner.Script?.BackupKind == ScriptBackupKind.None)
+        if (owner is null)
             return null;
+
+        // Said every run: with backups on, a script that silently isn't backed up looks as if it were.
+        if (owner.Script?.BackupKind == ScriptBackupKind.None)
+        {
+            sink(OutputLine.Info(
+                "[backup] Skipped — this script has no backup set up. Choose one under Backup in the script's settings."));
+            return null;
+        }
 
         if (!backupService.CanBackUp(owner, out var reason))
         {

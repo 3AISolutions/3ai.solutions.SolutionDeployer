@@ -30,6 +30,26 @@ public sealed class DeploymentRunnerTests
         Assert.Equal(2, engine.MaxConcurrentOverall);
     }
 
+    [Fact]
+    public async Task Script_without_a_backup_says_so_when_backups_are_on()
+    {
+        var engine = new TrackingEngine(PublishEngineKind.Script);
+        var runner = new DeploymentRunner(new PublishEngineFactory([engine]), new NoBackupService());
+        var job = new PublishJob
+        {
+            Project = Project("Service"),
+            Script = new ScriptTarget { Name = "deploy", ScriptPath = "deploy.ps1" },
+            Engine = PublishEngineKind.Script,
+        };
+        var output = new List<OutputLine>();
+
+        var results = await runner.RunAsync(
+            [job], new DeploymentRunOptions { BackupBeforePublish = true }, o => output.Add(o.Line), _ => { });
+
+        Assert.True(results.Single().IsSuccess);
+        Assert.Contains(output, l => l.Text.StartsWith("[backup] Skipped") && l.Text.Contains("no backup set up"));
+    }
+
     private static DeploymentProject Project(string name) => new()
     {
         Name = name,
@@ -48,7 +68,7 @@ public sealed class DeploymentRunnerTests
         Engine = PublishEngineKind.Dotnet,
     };
 
-    private sealed class TrackingEngine : IPublishEngine
+    private sealed class TrackingEngine(PublishEngineKind kind = PublishEngineKind.Dotnet) : IPublishEngine
     {
         private readonly Dictionary<string, int> _running = new();
         private int _overall;
@@ -56,7 +76,7 @@ public sealed class DeploymentRunnerTests
         public int MaxConcurrentPerProject { get; private set; }
         public int MaxConcurrentOverall { get; private set; }
 
-        public PublishEngineKind Kind => PublishEngineKind.Dotnet;
+        public PublishEngineKind Kind => kind;
 
         public bool IsAvailable(out string? unavailableReason)
         {
