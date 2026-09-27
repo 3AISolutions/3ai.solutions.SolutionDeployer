@@ -54,7 +54,7 @@ public partial class DeploySummaryViewModel : ObservableObject
 
                     var detail = result.Status switch
                     {
-                        PublishStatus.Succeeded => $"Succeeded ({result.Duration.TotalSeconds:F1}s)",
+                        PublishStatus.Succeeded => $"Succeeded in {result.TimingText}",
                         PublishStatus.Cancelled => "Cancelled",
                         _ => result.ErrorMessage ?? result.Status.ToString(),
                     };

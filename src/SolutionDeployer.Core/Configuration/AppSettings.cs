@@ -19,6 +19,12 @@ public sealed class AppSettings
     /// <summary>Snapshot the current deployment before publishing (MSDeploy / FileSystem profiles).</summary>
     public bool BackupBeforePublish { get; set; }
 
+    /// <summary>
+    /// With <see cref="BackupBeforePublish"/>, deploy a Web Deploy profile's backup preview build as it is instead
+    /// of building the project again to publish it.
+    /// </summary>
+    public bool DeployBackupPreview { get; set; } = true;
+
     /// <summary>How many snapshots to keep per profile before the oldest are pruned.</summary>
     public int BackupRetention { get; set; } = 10;
 

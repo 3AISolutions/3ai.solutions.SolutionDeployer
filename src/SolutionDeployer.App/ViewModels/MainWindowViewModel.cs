@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -78,6 +79,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         _runInParallel = _settings.RunInParallel;
         _backupBeforePublish = _settings.BackupBeforePublish;
+        _deployBackupPreview = _settings.DeployBackupPreview;
         _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
         _updateRepository = _settings.UpdateRepository;
         _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
@@ -115,6 +117,9 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _backupBeforePublish;
 
     [ObservableProperty]
+    private bool _deployBackupPreview;
+
+    [ObservableProperty]
     private bool _confirmBeforeDeploy;
 
     [ObservableProperty]
@@ -144,6 +149,12 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnBackupBeforePublishChanged(bool value)
     {
         _settings.BackupBeforePublish = value;
+        _settingsStore.Save(_settings);
+    }
+
+    partial void OnDeployBackupPreviewChanged(bool value)
+    {
+        _settings.DeployBackupPreview = value;
         _settingsStore.Save(_settings);
     }
 
@@ -727,7 +738,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 vm.Status = result.Status;
                 vm.ResultText = result.IsSuccess
-                    ? $"OK ({result.Duration.TotalSeconds:F1}s)"
+                    ? $"OK ({StepTimings.Format(result.Duration)})"
                     : result.ErrorMessage ?? result.Status.ToString();
             }
         });
@@ -739,15 +750,18 @@ public partial class MainWindowViewModel : ObservableObject
                 RunInParallel = RunInParallel,
                 MaxParallelism = 4,
                 BackupBeforePublish = BackupBeforePublish,
+                DeployBackupPreview = DeployBackupPreview,
             };
+            var runStarted = Stopwatch.GetTimestamp();
             var results = await _deploymentRunner.RunAsync(jobs, options, OnOutput, OnJobCompleted, _runCts.Token);
+            var runTime = StepTimings.Format(Stopwatch.GetElapsedTime(runStarted));
             summary = DeploySummaryViewModel.From(jobs, results);
 
             var ok = results.Count(r => r.IsSuccess);
             var failed = results.Count - ok;
             StatusMessage = failed == 0
-                ? $"All {ok} target(s) succeeded."
-                : $"{ok} succeeded, {failed} failed.";
+                ? $"All {ok} target(s) succeeded in {runTime}."
+                : $"{ok} succeeded, {failed} failed ({runTime}).";
             Log.Add(LogLine.System($"── {StatusMessage} ──"));
 
             // A backup taken during the run produces a new snapshot — refresh the restore lists.

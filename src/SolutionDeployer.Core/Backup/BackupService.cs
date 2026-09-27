@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -54,7 +55,23 @@ public sealed class BackupService(
     public async Task<DeploymentBackup?> BackUpAsync(
         PublishJob job,
         Action<OutputLine> onOutput,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        (await BackUpCoreAsync(job, onOutput, keepPreview: false, new StepTimings(), cancellationToken).ConfigureAwait(false))
+        .Backup;
+
+    public Task<PublishBackup> BackUpForPublishAsync(
+        PublishJob job,
+        Action<OutputLine> onOutput,
+        StepTimings? timings = null,
+        CancellationToken cancellationToken = default) =>
+        BackUpCoreAsync(job, onOutput, keepPreview: true, timings ?? new StepTimings(), cancellationToken);
+
+    private async Task<PublishBackup> BackUpCoreAsync(
+        PublishJob job,
+        Action<OutputLine> onOutput,
+        bool keepPreview,
+        StepTimings timings,
+        CancellationToken cancellationToken)
     {
         var owner = BackupOwner.ForJob(job)
             ?? throw new InvalidOperationException("BackUpAsync requires a job with a Profile or a Script.");
@@ -77,33 +94,54 @@ public sealed class BackupService(
         var partial = (target is MsDeployTarget && owner.Profile is not null && engineFactory is not null) ||
                       target is ReportedTargets;
 
+        // A Web Deploy profile's preview build is exactly what its publish sends, so it can be deployed as it is
+        // instead of built again — unless the publish needs something only MSBuild's Web Deploy step does.
+        keepPreview = keepPreview && partial && target is MsDeployTarget;
+        if (keepPreview && !DirectDeployEligibility.IsEligible(job, out var needsMsBuild))
+        {
+            onOutput(OutputLine.Info($"[publish] This publish will build the project again: {needsMsBuild}, which only MSBuild's Web Deploy step applies."));
+            keepPreview = false;
+        }
+
         onOutput(OutputLine.Info($"[backup] Capturing current deployment of '{owner.Name}' → {store.Description} …"));
 
+        PreparedDeployment? deployment = null;
         try
         {
-            var capture = target switch
+            Capture? capture;
+            switch (target)
             {
-                FileSystemTarget fs => await Task.Run(() => BackUpFileSystem(fs, tempPackage, onOutput), cancellationToken)
-                    .ConfigureAwait(false)
-                    ? Capture.Full(BackupKind.FileSystem)
-                    : null,
-                ReportedTargets => await BackUpScriptChangesAsync(job, tempPackage, onOutput, cancellationToken)
-                    .ConfigureAwait(false),
-                MsDeployTarget md when partial => await BackUpMsDeployChangesAsync(md, job, tempPackage, onOutput, cancellationToken)
-                    .ConfigureAwait(false),
-                MsDeployTarget md => await BackUpMsDeployAsync(md, job, tempPackage, onOutput, cancellationToken)
-                    .ConfigureAwait(false)
-                    ? Capture.Full(BackupKind.MsDeploy)
-                    : null,
-                _ => null,
-            };
+                case FileSystemTarget fs:
+                    capture = await timings.MeasureAsync("backup", () => Task.Run(() => BackUpFileSystem(fs, tempPackage, onOutput), cancellationToken))
+                        .ConfigureAwait(false)
+                        ? Capture.Full(BackupKind.FileSystem)
+                        : null;
+                    break;
+                case ReportedTargets:
+                    capture = await timings.MeasureAsync("backup", () => BackUpScriptChangesAsync(job, tempPackage, onOutput, cancellationToken))
+                        .ConfigureAwait(false);
+                    break;
+                case MsDeployTarget md when partial:
+                    (capture, deployment) = await BackUpMsDeployChangesAsync(md, job, tempPackage, keepPreview, timings, onOutput, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                case MsDeployTarget md:
+                    capture = await timings.MeasureAsync("backup", () => BackUpMsDeployAsync(md, job, tempPackage, onOutput, cancellationToken))
+                        .ConfigureAwait(false)
+                        ? Capture.Full(BackupKind.MsDeploy)
+                        : null;
+                    break;
+                default:
+                    capture = null;
+                    break;
+            }
 
             if (capture is null)
             {
                 // The partial path explains its own "nothing to save" outcome.
                 if (!partial)
                     onOutput(OutputLine.Info("[backup] Nothing to back up (no existing deployment found)."));
-                return null;
+                return new PublishBackup(null, deployment);
             }
 
             var previous = existing.FirstOrDefault();
@@ -131,20 +169,30 @@ public sealed class BackupService(
                 Targets = capture.Targets,
             };
 
-            await store.SaveAsync(backup, tempPackage, cancellationToken).ConfigureAwait(false);
-            onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}{backup.ChangeText}) to {store.Description}."));
-
-            // A partial snapshot holds only what this deploy changes, so matching the previous one says nothing.
-            if (capture.Kind is not (BackupKind.MsDeployPartial or BackupKind.ScriptPartial) &&
-                previous?.ContentHash is { } priorHash && priorHash == contentHash)
+            await timings.MeasureAsync("save snapshot", async () =>
             {
-                onOutput(OutputLine.Info(
-                    $"[backup] NOTE: this snapshot is identical to snapshot #{previous.Sequence} — the deployed " +
-                    "content has not changed since then (nothing new was deployed)."));
-            }
+                await store.SaveAsync(backup, tempPackage, cancellationToken).ConfigureAwait(false);
+                onOutput(OutputLine.Info($"[backup] Saved snapshot #{sequence} ({backup.SizeText}{backup.ChangeText}) to {store.Description}."));
 
-            await PruneAsync(store, ownerKey, onOutput, cancellationToken).ConfigureAwait(false);
-            return backup;
+                // A partial snapshot holds only what this deploy changes, so matching the previous one says nothing.
+                if (capture.Kind is not (BackupKind.MsDeployPartial or BackupKind.ScriptPartial) &&
+                    previous?.ContentHash is { } priorHash && priorHash == contentHash)
+                {
+                    onOutput(OutputLine.Info(
+                        $"[backup] NOTE: this snapshot is identical to snapshot #{previous.Sequence} — the deployed " +
+                        "content has not changed since then (nothing new was deployed)."));
+                }
+
+                await PruneAsync(store, ownerKey, onOutput, cancellationToken).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+
+            return new PublishBackup(backup, deployment);
+        }
+        catch
+        {
+            // The publish then runs its own build, so the kept preview is no longer needed.
+            deployment?.Dispose();
+            throw;
         }
         finally
         {
@@ -428,35 +476,54 @@ public sealed class BackupService(
 
     // ---- MSDeploy (only what the publish changes) -------------------------
 
-    private async Task<Capture?> BackUpMsDeployChangesAsync(
+    /// <summary>
+    /// Saves only the server files the publish will overwrite or delete. With <paramref name="keepPreview"/>, the
+    /// preview build is handed back as a <see cref="PreparedDeployment"/> (which then owns its folder) for the
+    /// publish to deploy instead of building the project again.
+    /// </summary>
+    private async Task<(Capture? Capture, PreparedDeployment? Deployment)> BackUpMsDeployChangesAsync(
         MsDeployTarget target,
         PublishJob job,
         string packagePath,
+        bool keepPreview,
+        StepTimings timings,
         Action<OutputLine> onOutput,
         CancellationToken cancellationToken)
     {
         // Kept short: web projects have deep content paths, and the copy fails past Windows' 260-char limit.
         var previewDir = Path.Combine(Path.GetTempPath(), $"sdp_{Guid.NewGuid().ToString("N")[..8]}");
         var manifestPath = Path.Combine(Path.GetTempPath(), $"sd_manifest_{Guid.NewGuid():N}.xml");
+        PreparedDeployment? deployment = null;
         try
         {
             onOutput(OutputLine.Info("[backup] Building a preview of this publish to find the server files it will change …"));
-            await BuildPreviewAsync(job, previewDir, onOutput, cancellationToken).ConfigureAwait(false);
+            await timings.MeasureAsync("preview build", () => BuildPreviewAsync(job, previewDir, onOutput, cancellationToken))
+                .ConfigureAwait(false);
 
-            var changes = await WhatIfAsync(target, job, previewDir, onOutput, cancellationToken).ConfigureAwait(false);
+            var changes = await timings.MeasureAsync("change check", () => WhatIfAsync(target, job, previewDir, onOutput, cancellationToken))
+                .ConfigureAwait(false);
+
+            if (keepPreview)
+            {
+                deployment = new PreparedDeployment(
+                    // Only when msdeploy itself said so: no parsed changes alone could be output it didn't recognise.
+                    isUpToDate: changes.IsEmpty && changes.ReportedTotal == 0,
+                    (output, token) => DeployPreviewAsync(target, job, previewDir, output, token),
+                    () => TryDeleteDirectory(previewDir));
+            }
 
             if (changes.LooksUnparsed)
             {
                 onOutput(OutputLine.Info("[backup] Could not read msdeploy's list of changes — taking a full snapshot instead."));
-                return await BackUpMsDeployAsync(target, job, packagePath, onOutput, cancellationToken).ConfigureAwait(false)
-                    ? Capture.Full(BackupKind.MsDeploy)
-                    : null;
+                var full = await timings.MeasureAsync("backup", () => BackUpMsDeployAsync(target, job, packagePath, onOutput, cancellationToken))
+                    .ConfigureAwait(false);
+                return (full ? Capture.Full(BackupKind.MsDeploy) : null, deployment);
             }
 
             if (changes.IsEmpty)
             {
                 onOutput(OutputLine.Info("[backup] This publish won't change any files on the server — no snapshot needed."));
-                return null;
+                return (null, deployment);
             }
 
             var toSave = changes.ToSave;
@@ -464,30 +531,40 @@ public sealed class BackupService(
                 $"[backup] The publish will update {changes.Updated.Count}, delete {changes.Deleted.Count} and add " +
                 $"{changes.Added.Count} item(s) — saving the {toSave.Count} it will overwrite or delete."));
 
-            if (toSave.Count > 0)
+            await timings.MeasureAsync("backup", async () =>
             {
-                WriteManifest(manifestPath, toSave);
-                var source = BuildMsDeployProvider("manifest", manifestPath, target, job.Credentials);
-                var (args, redacted) = ComposeMsDeployArgs(
-                    source,
-                    ($"-dest:package={Q(packagePath)}", $"-dest:package={Q(packagePath)}"),
-                    job.AllowUntrustedCertificate);
+                if (toSave.Count > 0)
+                {
+                    WriteManifest(manifestPath, toSave);
+                    var source = BuildMsDeployProvider("manifest", manifestPath, target, job.Credentials);
+                    var (args, redacted) = ComposeMsDeployArgs(
+                        source,
+                        ($"-dest:package={Q(packagePath)}", $"-dest:package={Q(packagePath)}"),
+                        job.AllowUntrustedCertificate);
 
-                var exit = await RunMsDeployAsync(args, redacted, onOutput, cancellationToken).ConfigureAwait(false);
-                if (exit != 0)
-                    throw new InvalidOperationException($"msdeploy backup failed (exit code {exit}).");
-            }
-            else
-            {
-                // Only additions: nothing to save, but the snapshot still records what to remove on restore.
-                using (ZipFile.Open(packagePath, ZipArchiveMode.Create)) { }
-            }
+                    var exit = await RunMsDeployAsync(args, redacted, onOutput, cancellationToken).ConfigureAwait(false);
+                    if (exit != 0)
+                        throw new InvalidOperationException($"msdeploy backup failed (exit code {exit}).");
+                }
+                else
+                {
+                    // Only additions: nothing to save, but the snapshot still records what to remove on restore.
+                    using (ZipFile.Open(packagePath, ZipArchiveMode.Create)) { }
+                }
+            }).ConfigureAwait(false);
 
-            return new Capture(BackupKind.MsDeployPartial, toSave, changes.Added);
+            return (new Capture(BackupKind.MsDeployPartial, toSave, changes.Added), deployment);
+        }
+        catch
+        {
+            deployment?.Dispose();
+            throw;
         }
         finally
         {
-            TryDeleteDirectory(previewDir);
+            // A kept preview belongs to its PreparedDeployment, which deletes it once deployed.
+            if (deployment is null)
+                TryDeleteDirectory(previewDir);
             TryDeleteFile(manifestPath);
         }
     }
@@ -538,10 +615,7 @@ public sealed class BackupService(
     {
         // Compare by content: the preview's timestamps are all new, so a timestamp compare would flag everything.
         var flags = new List<string> { "-whatif", "-useCheckSum" };
-        if (IsTrue(job.Profile!, "SkipExtraFilesOnServer"))
-            flags.Add("-enableRule:DoNotDeleteRule");
-        if (IsTrue(job.Profile!, "ExcludeApp_Data"))
-            flags.Add(@"-skip:objectName=dirPath,absolutePath=\\App_Data$");
+        flags.AddRange(ContentRules(job.Profile!));
 
         var dest = BuildMsDeployProvider("contentPath", target.ContentPath, target, job.Credentials);
         var (args, redacted) = ComposeMsDeployArgs(
@@ -564,6 +638,64 @@ public sealed class BackupService(
 
         lock (lines)
             return MsDeployChangeSet.Parse(lines);
+    }
+
+    /// <summary>
+    /// Publishes a kept preview build: syncs it onto the server with the rules the profile's own Web Deploy step
+    /// uses (see <see cref="DirectDeployEligibility"/>), comparing by content as the change check did — so it
+    /// sends exactly the changes the backup was taken for.
+    /// </summary>
+    private async Task<PublishResult> DeployPreviewAsync(
+        MsDeployTarget target,
+        PublishJob job,
+        string previewDir,
+        Action<OutputLine> onOutput,
+        CancellationToken cancellationToken)
+    {
+        var profile = job.Profile!;
+        var flags = new List<string> { "-useCheckSum" };
+        flags.AddRange(ContentRules(profile));
+        if (IsTrue(profile, "EnableMsDeployAppOffline"))
+            flags.Add("-enableRule:AppOffline");
+        if (IsTrue(profile, "MSDeployEnableWebConfigEncryptRule"))
+            flags.Add("-enableRule:EncryptWebConfig");
+        // msdeploy.exe runs Web Deploy's server-side backup by default; a profile publish only asks for it with
+        // EnableMSDeployBackup.
+        if (!IsTrue(profile, "EnableMSDeployBackup"))
+            flags.Add("-disableRule:BackupRule");
+
+        var dest = BuildMsDeployProvider("contentPath", target.ContentPath, target, job.Credentials);
+        var (args, redacted) = ComposeMsDeployArgs(
+            ($"-source:contentPath={Q(previewDir)}", $"-source:contentPath={Q(previewDir)}"),
+            dest,
+            job.AllowUntrustedCertificate,
+            flags);
+
+        onOutput(OutputLine.Info("[publish] Deploying the backup's preview build — no second build needed …"));
+        var started = Stopwatch.GetTimestamp();
+        var exit = await RunMsDeployAsync(args, redacted, onOutput, cancellationToken).ConfigureAwait(false);
+
+        return new PublishResult
+        {
+            JobId = job.Id,
+            DisplayName = job.DisplayName,
+            Status = exit == 0 ? PublishStatus.Succeeded : PublishStatus.Failed,
+            ExitCode = exit,
+            Duration = Stopwatch.GetElapsedTime(started),
+            CommandLine = $"msdeploy {redacted}",
+            ErrorMessage = exit == 0 ? null : $"msdeploy exited with code {exit}.",
+        };
+    }
+
+    /// <summary>The profile's rules for which server files a sync may touch — the same for the change check and the deploy.</summary>
+    private static List<string> ContentRules(PublishProfile profile)
+    {
+        var rules = new List<string>();
+        if (IsTrue(profile, "SkipExtraFilesOnServer"))
+            rules.Add("-enableRule:DoNotDeleteRule");
+        if (IsTrue(profile, "ExcludeApp_Data"))
+            rules.Add(@"-skip:objectName=dirPath,absolutePath=\\App_Data$");
+        return rules;
     }
 
     /// <summary>Undoes one partial profile snapshot on its Web Deploy target.</summary>

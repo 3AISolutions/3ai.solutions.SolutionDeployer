@@ -206,6 +206,9 @@
                                     <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" />
                                     <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}"
                                               ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
+                                    <CheckBox Content="Build once when backing up" IsChecked="{Binding DeployBackupPreview}"
+                                              IsEnabled="{Binding BackupBeforePublish}" Margin="20,0,0,0"
+                                              ToolTip.Tip="A Web Deploy backup already builds the publish to find what it changes. Deploy that build directly instead of building the project a second time (profiles that use Web Deploy parameters, skip rules or database publishing still publish through MSBuild)" />
                                     <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}"
                                               ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
                                     <Separator Margin="0,2" />

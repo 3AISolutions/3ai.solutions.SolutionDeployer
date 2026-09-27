@@ -30,6 +30,11 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     snapshot of their configured folder, or (`ScriptBackupKind.WhatIf`) are first run with `-WhatIf` and
     must print `SD-WHATIF-TARGET: <computerName>` + msdeploy change lines + `Total changes: N` per target
     (`ScriptWhatIfReport`); targets reporting identical changes are saved once and restored to all.
+  - Build once: that MSDeploy preview is kept as a `PreparedDeployment` and `DeploymentRunner` syncs it to the
+    server (msdeploy, same content rules as the what-if) instead of publishing — i.e. building — again. Profiles
+    using MSBuild-only Web Deploy features (parameters, skip rules, DB publishing …; `DirectDeployEligibility`)
+    publish as before, and a failed sync falls back to the engine. Each job's steps are timed (`StepTimings` →
+    `PublishResult.Steps`, logged as `[timing]`).
   - Because partial snapshots chain, deletion only ever removes an owner's *oldest* snapshots
     (`BackupRetention`): deleting one also deletes every older partial one. `BackupCleanupService`
     inventories all stores and classifies owners (active / old destination / orphaned / unknown) via

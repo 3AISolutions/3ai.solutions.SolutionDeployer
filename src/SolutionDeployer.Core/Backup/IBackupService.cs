@@ -1,4 +1,5 @@
 using SolutionDeployer.Core.Models;
+using SolutionDeployer.Core.Publishing;
 
 namespace SolutionDeployer.Core.Backup;
 
@@ -22,6 +23,20 @@ public interface IBackupService
     /// a first-time deployment, or a publish that changes nothing). Throws on a genuine backup failure.
     /// </summary>
     Task<DeploymentBackup?> BackUpAsync(PublishJob job, Action<OutputLine> onOutput, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <see cref="BackUpAsync"/> run just before publishing <paramref name="job"/>. A Web Deploy profile's backup
+    /// builds a preview of the publish anyway; when that build can be synced to the server as it is (see
+    /// <c>DirectDeployEligibility</c>), it is kept and returned as a <see cref="PreparedDeployment"/> for the
+    /// caller to deploy — and dispose — instead of building the project again. Each step's duration goes to
+    /// <paramref name="timings"/>.
+    /// </summary>
+    async Task<PublishBackup> BackUpForPublishAsync(
+        PublishJob job,
+        Action<OutputLine> onOutput,
+        StepTimings? timings = null,
+        CancellationToken cancellationToken = default) =>
+        new(await BackUpAsync(job, onOutput, cancellationToken).ConfigureAwait(false), null);
 
     /// <summary>Lists existing snapshots for an owner (from its configured destination), newest first.</summary>
     Task<IReadOnlyList<DeploymentBackup>> ListAsync(BackupOwner owner, CancellationToken cancellationToken = default);

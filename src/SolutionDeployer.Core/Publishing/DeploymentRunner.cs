@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using SolutionDeployer.Core.Backup;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Projects;
@@ -25,11 +26,18 @@ public sealed class DeploymentRunOptions
 
     /// <summary>Snapshot the current deployment before each publish or script run (where supported).</summary>
     public bool BackupBeforePublish { get; init; }
+
+    /// <summary>
+    /// With <see cref="BackupBeforePublish"/>, deploy a Web Deploy profile's backup preview build as it is instead
+    /// of building the project a second time to publish it (see <see cref="PreparedDeployment"/>).
+    /// </summary>
+    public bool DeployBackupPreview { get; init; } = true;
 }
 
 /// <summary>
 /// Runs a batch of <see cref="PublishJob"/>s (any combination of project+profile selections),
-/// streaming tagged output and reporting per-job results as they complete.
+/// streaming tagged output and reporting per-job results as they complete. Each job's result carries how
+/// long it took, step by step.
 /// </summary>
 public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBackupService backupService)
 {
@@ -50,13 +58,20 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
             var engine = engineFactory.Get(job.Engine);
             void Sink(OutputLine line) => onOutput(new JobOutput(job.Id, job.DisplayName, line));
 
-            if (options.BackupBeforePublish)
-                await TryBackupAsync(job, Sink, cancellationToken).ConfigureAwait(false);
+            var started = Stopwatch.GetTimestamp();
+            var timings = new StepTimings();
 
             PublishResult result;
+            PreparedDeployment? prepared = null;
             try
             {
-                result = await engine.PublishAsync(job, Sink, cancellationToken).ConfigureAwait(false);
+                if (options.BackupBeforePublish)
+                {
+                    prepared = await TryBackupAsync(job, options.DeployBackupPreview, timings, Sink, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                result = await PublishAsync(job, engine, prepared, timings, Sink, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -79,6 +94,13 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
                     ErrorMessage = ex.Message,
                 };
             }
+            finally
+            {
+                prepared?.Dispose();
+            }
+
+            result = WithTimings(result, Stopwatch.GetElapsedTime(started), timings.Steps);
+            Sink(OutputLine.Info($"[timing] {result.TimingText}"));
 
             results.Add(result);
             onJobCompleted(result);
@@ -165,27 +187,97 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
     }
 
     /// <summary>
-    /// Best-effort backup before a publish. Skips scripts without a backup target and unsupported
-    /// profiles, and treats a
-    /// backup failure as a logged warning rather than aborting the publish.
+    /// Publishes the job: deploys the backup's <paramref name="prepared"/> build when there is one, and
+    /// otherwise — or when that deploy fails — runs the job's engine.
     /// </summary>
-    private async Task TryBackupAsync(PublishJob job, Action<OutputLine> sink, CancellationToken cancellationToken)
+    private static async Task<PublishResult> PublishAsync(
+        PublishJob job,
+        IPublishEngine engine,
+        PreparedDeployment? prepared,
+        StepTimings timings,
+        Action<OutputLine> sink,
+        CancellationToken cancellationToken)
+    {
+        var step = job.Script is null ? $"{job.Engine.ToString().ToLowerInvariant()} publish" : "script";
+
+        if (prepared is { IsUpToDate: true })
+        {
+            sink(OutputLine.Info("[publish] The server already has this build — nothing to deploy."));
+            return new PublishResult { JobId = job.Id, DisplayName = job.DisplayName, Status = PublishStatus.Succeeded };
+        }
+
+        if (prepared is not null)
+        {
+            var deployed = await timings.MeasureAsync("deploy", () => prepared.DeployAsync(sink, cancellationToken))
+                .ConfigureAwait(false);
+            if (deployed.IsSuccess)
+                return deployed;
+
+            // A partly applied sync is fine: the publish converges the server on the same build, and the backup
+            // was taken before either touched it.
+            sink(OutputLine.Error(
+                $"[publish] Deploying the preview build failed ({deployed.ErrorMessage}) — publishing the usual way instead."));
+        }
+
+        return await timings.MeasureAsync(step, () => engine.PublishAsync(job, sink, cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <paramref name="result"/> timed as a whole job: <see cref="PublishResult.Duration"/> becomes the job's
+    /// wall-clock time and <see cref="PublishResult.Steps"/> its breakdown.
+    /// </summary>
+    internal static PublishResult WithTimings(PublishResult result, TimeSpan total, IReadOnlyList<StepTiming> steps)
+    {
+        // Name the time no step accounts for (e.g. listing earlier snapshots in a remote store) when it's noticeable.
+        var unaccounted = total - steps.Aggregate(TimeSpan.Zero, (sum, s) => sum + s.Duration);
+        if (steps.Count > 0 && unaccounted > TimeSpan.FromSeconds(2))
+            steps = [.. steps, new StepTiming("other", unaccounted)];
+
+        return new PublishResult
+        {
+            JobId = result.JobId,
+            DisplayName = result.DisplayName,
+            Status = result.Status,
+            ExitCode = result.ExitCode,
+            Duration = total,
+            Steps = steps,
+            CommandLine = result.CommandLine,
+            ErrorMessage = result.ErrorMessage,
+        };
+    }
+
+    /// <summary>
+    /// Best-effort backup before a publish. Skips scripts without a backup target and unsupported
+    /// profiles, and treats a backup failure as a logged warning rather than aborting the publish.
+    /// Returns the backup's build when the publish can deploy it instead of building again.
+    /// </summary>
+    private async Task<PreparedDeployment?> TryBackupAsync(
+        PublishJob job,
+        bool deployPreview,
+        StepTimings timings,
+        Action<OutputLine> sink,
+        CancellationToken cancellationToken)
     {
         var owner = BackupOwner.ForJob(job);
 
         // A script without a backup target simply isn't backed up — not worth a "skipped" line every run.
         if (owner is null || owner.Script?.BackupKind == ScriptBackupKind.None)
-            return;
+            return null;
 
         if (!backupService.CanBackUp(owner, out var reason))
         {
             sink(OutputLine.Info($"[backup] Skipped — {reason}"));
-            return;
+            return null;
         }
 
         try
         {
-            await backupService.BackUpAsync(job, sink, cancellationToken).ConfigureAwait(false);
+            var backup = await backupService.BackUpForPublishAsync(job, sink, timings, cancellationToken).ConfigureAwait(false);
+            if (deployPreview)
+                return backup.Deployment;
+
+            backup.Deployment?.Dispose();
+            return null;
         }
         catch (OperationCanceledException)
         {
@@ -194,6 +286,7 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
         catch (Exception ex)
         {
             sink(OutputLine.Error($"[backup] Failed: {ex.Message}. Proceeding with publish."));
+            return null;
         }
     }
 }
