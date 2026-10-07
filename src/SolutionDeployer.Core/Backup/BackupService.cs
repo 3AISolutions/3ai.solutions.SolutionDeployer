@@ -614,7 +614,8 @@ public sealed class BackupService(
         CancellationToken cancellationToken)
     {
         // Compare by content: the preview's timestamps are all new, so a timestamp compare would flag everything.
-        var flags = new List<string> { "-whatif", "-useCheckSum" };
+        // No server-side backup: msdeploy.exe attempts Web Deploy's BackupRule by default, even with -whatif.
+        var flags = new List<string> { "-whatif", "-useCheckSum", "-disableRule:BackupRule" };
         flags.AddRange(ContentRules(job.Profile!));
 
         var dest = BuildMsDeployProvider("contentPath", target.ContentPath, target, job.Credentials);
