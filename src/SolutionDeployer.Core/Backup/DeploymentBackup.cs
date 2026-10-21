@@ -29,7 +29,7 @@ public sealed class BackupTargetChanges
 {
     /// <summary>
     /// msdeploy <c>computerName</c> of the target the files were saved from, e.g.
-    /// <c>https://host:8172/msdeploy.axd?site=MySite</c>.
+    /// <c>https://host:8172/msdeploy.axd?site=MySite</c>, or <c>ssh://user@host</c> for a Linux server reached over SSH.
     /// </summary>
     public required string ComputerName { get; init; }
 

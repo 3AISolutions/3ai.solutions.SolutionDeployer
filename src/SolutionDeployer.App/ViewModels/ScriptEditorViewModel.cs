@@ -108,7 +108,8 @@ public partial class ScriptEditorViewModel : ObservableObject
     {
         ScriptBackupKind.WhatIf =>
             "Before the real run the script is run with -WhatIf and reports, per server, the files it would change " +
-            "(\"SD-WHATIF-TARGET:\" lines followed by msdeploy's change list). Only those files are saved; restore rolls the deploy back.",
+            "(\"SD-WHATIF-TARGET:\" lines followed by msdeploy's change list; a Linux server as ssh://user@host, reached with your SSH key). " +
+            "Only those files are saved; restore rolls the deploy back.",
         _ => "With \"Backup before publish\" on, the whole folder is snapshotted before the script runs, and can be restored from the script's row.",
     };
 

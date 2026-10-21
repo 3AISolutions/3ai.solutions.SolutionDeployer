@@ -34,6 +34,15 @@ public sealed class ScriptWhatIfTests : IDisposable
         Assert.True(targets[1].Changes.IsEmpty);
     }
 
+    [Theory]
+    [InlineData("ssh://ubuntu@host", "ubuntu@host")]
+    [InlineData("SSH://ubuntu@host/", "ubuntu@host")]
+    [InlineData("https://ws1:8172/msdeploy.axd?site=api", null)]
+    public void Ssh_targets_are_told_apart_from_Web_Deploy_ones(string computerName, string? destination)
+    {
+        Assert.Equal(destination, BackupService.SshDestination(computerName));
+    }
+
     [Fact]
     public void Report_without_a_target_marker_is_rejected()
     {
@@ -112,6 +121,31 @@ public sealed class ScriptWhatIfTests : IDisposable
         Assert.Equal(["https://ws2:8172/msdeploy.axd?site=api"], backup.Targets[0].ReplicaComputerNames);
         Assert.Empty(backup.Targets[1].ReplicaComputerNames);
         Assert.Contains("on 3 servers", backup.DisplayName);
+    }
+
+    [Fact]
+    public async Task Ssh_targets_on_one_server_are_recorded_per_application()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // Two applications on the same Linux server; only additions, so nothing has to be pulled over SSH.
+        var (service, job) = ScriptBackup(
+            "@echo SD-WHATIF-TARGET: ssh://ubuntu@linux1\r\n" +
+            "@echo Info: Adding file (/srv/NWT/App/New.dll).\r\n" +
+            "@echo Total changes: 1 (1 added, 0 deleted, 0 updated)\r\n" +
+            "@echo SD-WHATIF-TARGET: ssh://ubuntu@linux1\r\n" +
+            "@echo Info: Adding file (/srv/Premiere/App/New.dll).\r\n" +
+            "@echo Total changes: 1 (1 added, 0 deleted, 0 updated)\r\n");
+
+        var backup = await service.BackUpAsync(job, _ => { });
+
+        Assert.NotNull(backup);
+        Assert.Equal(2, backup!.Targets.Count);
+        Assert.Equal(["/srv/NWT/App/New.dll"], backup.Targets[0].AddedPaths);
+        Assert.Equal(["/srv/Premiere/App/New.dll"], backup.Targets[1].AddedPaths);
+        Assert.Null(backup.Targets[0].PackageEntry);
+        Assert.Equal("ssh://ubuntu@linux1", backup.Target);
     }
 
     [Fact]

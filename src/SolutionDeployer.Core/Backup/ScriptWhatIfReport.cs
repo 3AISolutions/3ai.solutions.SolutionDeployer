@@ -9,7 +9,9 @@ public sealed record ScriptWhatIfTarget(string ComputerName, MsDeployChangeSet C
 /// Reads the output of a script run with <c>-WhatIf</c>. The contract: before each target's changes the
 /// script prints <c>SD-WHATIF-TARGET: &lt;msdeploy computerName&gt;</c> (e.g.
 /// <c>https://host:8172/msdeploy.axd?site=MySite</c>), followed by msdeploy-style change lines
-/// (<c>Info: Updating file (MySite\bin\App.dll).</c>) and a <c>Total changes: N</c> line.
+/// (<c>Info: Updating file (MySite\bin\App.dll).</c>) and a <c>Total changes: N</c> line. A Linux server is
+/// reported as <c>ssh://user@host</c> with absolute paths (<c>Info: Updating file (/srv/app/App.dll).</c>), and its
+/// files are saved and restored over ssh/scp with the user's SSH key.
 /// </summary>
 public static partial class ScriptWhatIfReport
 {

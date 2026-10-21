@@ -161,7 +161,7 @@ public sealed class BackupService(
                 PackagePath = store.ResolveKey(ownerKey, fileName),
                 SizeBytes = new FileInfo(tempPackage).Length,
                 Target = capture.Targets.Count > 0
-                    ? string.Join(", ", capture.Targets.Select(t => t.ComputerName))
+                    ? string.Join(", ", capture.Targets.Select(t => t.ComputerName).Distinct(StringComparer.OrdinalIgnoreCase))
                     : target.DisplayTarget,
                 ContentHash = contentHash,
                 SavedPaths = capture.Saved,
@@ -752,6 +752,13 @@ public sealed class BackupService(
                 foreach (var computerName in changes.AllComputerNames)
                 {
                     onOutput(OutputLine.Info($"[restore] Rolling back {computerName} …"));
+                    if (SshDestination(computerName) is { } sshDestination)
+                    {
+                        await UndoSshChangesAsync(sshDestination, changes.AddedPaths, packagePath, onOutput, cancellationToken)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+
                     var target = new MsDeployTarget(computerName, string.Empty, computerName);
                     await UndoChangesAsync(target, changes.AddedPaths, packagePath, credentials, allowUntrustedCertificate, onOutput, cancellationToken)
                         .ConfigureAwait(false);
@@ -893,7 +900,12 @@ public sealed class BackupService(
                 }
 
                 string? entry = null;
-                if (toSave.Count > 0)
+                if (toSave.Count > 0 && SshDestination(computerName) is { } sshDestination)
+                {
+                    entry = $"target{i}.tar.gz";
+                    await PullOverSshAsync(sshDestination, toSave, work, entry, onOutput, cancellationToken).ConfigureAwait(false);
+                }
+                else if (toSave.Count > 0)
                 {
                     entry = $"target{i}.zip";
                     var manifestPath = Path.Combine(work, $"target{i}.xml");
@@ -953,12 +965,129 @@ public sealed class BackupService(
     {
         onOutput(OutputLine.Info($"[restore] Running on the server: {command}"));
 
+        if (SshDestination(target.ComputerName) is { } sshDestination)
+            return await RunSshAsync(sshDestination, command.Trim(), onOutput, cancellationToken).ConfigureAwait(false);
+
         // Exit code 2 counts as success so "net stop/start" on a service that's already stopped/started is fine.
         var source = $"-source:runCommand={Q(command.Trim())},waitInterval=10000,waitAttempts=12,successReturnCodes=0x0;0x2";
         var dest = BuildMsDeployProvider("auto", null, target, credentials);
         var (args, redacted) = ComposeMsDeployArgs((source, source), dest, allowUntrustedCertificate);
 
         return await RunMsDeployAsync(args, redacted, onOutput, cancellationToken).ConfigureAwait(false);
+    }
+
+    // ---- SSH (script targets reported as ssh://user@host) -----------------
+
+    private const string SshScheme = "ssh://";
+
+    /// <summary>
+    /// The ssh destination (e.g. <c>ubuntu@host</c>) of a script target reported as <c>ssh://ubuntu@host</c>,
+    /// or null for a Web Deploy target. An SSH target's change lines carry absolute server paths.
+    /// </summary>
+    internal static string? SshDestination(string computerName) =>
+        computerName.StartsWith(SshScheme, StringComparison.OrdinalIgnoreCase)
+            ? computerName[SshScheme.Length..].TrimEnd('/')
+            : null;
+
+    /// <summary>Saves <paramref name="paths"/> from the server as the tarball <paramref name="entry"/> in <paramref name="work"/>.</summary>
+    private async Task PullOverSshAsync(
+        string destination,
+        IReadOnlyList<string> paths,
+        string work,
+        string entry,
+        Action<OutputLine> onOutput,
+        CancellationToken cancellationToken)
+    {
+        var remote = RemoteTempPath();
+        var list = $"{entry}.list";
+        try
+        {
+            // The list goes over as a file: hundreds of paths would overflow a Windows command line.
+            await File.WriteAllTextAsync(Path.Combine(work, list), string.Join('\n', paths) + "\n", cancellationToken).ConfigureAwait(false);
+            await RunScpOrThrowAsync(list, $"{destination}:{remote}.list", work, onOutput, cancellationToken).ConfigureAwait(false);
+
+            // -P keeps the absolute paths, so the restore puts each file back where it came from.
+            var exit = await RunSshAsync(destination, $"tar -czPf {remote}.tar.gz -T {remote}.list", onOutput, cancellationToken)
+                .ConfigureAwait(false);
+            if (exit != 0)
+                throw new InvalidOperationException($"SSH backup failed on {destination} (tar exit code {exit}).");
+
+            await RunScpOrThrowAsync($"{destination}:{remote}.tar.gz", entry, work, onOutput, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await RunSshAsync(destination, $"rm -f {remote}.list {remote}.tar.gz", onOutput, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Undoes a deploy on an SSH target: removes what it added, then extracts the saved tarball
+    /// (<paramref name="packagePath"/>, when anything was saved) over the server's files.
+    /// </summary>
+    private async Task UndoSshChangesAsync(
+        string destination,
+        IReadOnlyList<string> addedPaths,
+        string? packagePath,
+        Action<OutputLine> onOutput,
+        CancellationToken cancellationToken)
+    {
+        var work = Path.Combine(Path.GetTempPath(), $"sdu_{Guid.NewGuid().ToString("N")[..8]}");
+        Directory.CreateDirectory(work);
+        var remote = RemoteTempPath();
+        try
+        {
+            if (addedPaths.Count > 0)
+            {
+                onOutput(OutputLine.Info($"[restore] Removing the {addedPaths.Count} file(s) that deploy added"));
+                await File.WriteAllTextAsync(Path.Combine(work, "added.list"), string.Join('\n', addedPaths) + "\n", cancellationToken)
+                    .ConfigureAwait(false);
+                await RunScpOrThrowAsync("added.list", $"{destination}:{remote}.list", work, onOutput, cancellationToken).ConfigureAwait(false);
+
+                var exit = await RunSshAsync(destination, $"xargs -d '\\n' -r rm -f -- < {remote}.list", onOutput, cancellationToken)
+                    .ConfigureAwait(false);
+                if (exit != 0)
+                    onOutput(OutputLine.Error($"[restore] Could not remove the added files on {destination} (exit code {exit})."));
+            }
+
+            if (packagePath is null)
+                return;
+
+            File.Copy(packagePath, Path.Combine(work, "saved.tar.gz"));
+            await RunScpOrThrowAsync("saved.tar.gz", $"{destination}:{remote}.tar.gz", work, onOutput, cancellationToken).ConfigureAwait(false);
+
+            var extractExit = await RunSshAsync(destination, $"tar -xzPf {remote}.tar.gz", onOutput, cancellationToken).ConfigureAwait(false);
+            if (extractExit != 0)
+                throw new InvalidOperationException($"SSH restore failed on {destination} (tar exit code {extractExit}).");
+        }
+        finally
+        {
+            await RunSshAsync(destination, $"rm -f {remote}.list {remote}.tar.gz", onOutput, CancellationToken.None).ConfigureAwait(false);
+            TryDeleteDirectory(work);
+        }
+    }
+
+    /// <summary>A unique path prefix on the server for this operation's temporary files.</summary>
+    private static string RemoteTempPath() => $"/tmp/sd_{Guid.NewGuid().ToString("N")[..12]}";
+
+    // BatchMode: authentication is the user's SSH key/agent; never wait on a password or host-key prompt.
+    private async Task<int> RunSshAsync(string destination, string command, Action<OutputLine> onOutput, CancellationToken cancellationToken)
+    {
+        onOutput(OutputLine.Info($"$ ssh {destination} {command}"));
+        var result = await processRunner
+            .RunAsync("ssh", ["-o", "BatchMode=yes", destination, command], workingDirectory: null, onOutput, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return result.ExitCode;
+    }
+
+    /// <summary>Copies with scp from <paramref name="work"/>, so local files are bare names scp can't mistake for a host.</summary>
+    private async Task RunScpOrThrowAsync(string source, string destination, string work, Action<OutputLine> onOutput, CancellationToken cancellationToken)
+    {
+        onOutput(OutputLine.Info($"$ scp {source} {destination}"));
+        var result = await processRunner
+            .RunAsync("scp", ["-q", "-o", "BatchMode=yes", source, destination], work, onOutput, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException($"scp {source} → {destination} failed (exit code {result.ExitCode}).");
     }
 
     private async Task<int> RunMsDeployAsync(
