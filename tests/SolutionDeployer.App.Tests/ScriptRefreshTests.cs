@@ -57,7 +57,8 @@ public sealed class ScriptRefreshTests : IDisposable
             sourceLoader, runner, engineFactory, settings,
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
             new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
-            new FakeUpdatePrompt(), whatsNew, new FakeDeploySummary(), new FakeBackupManager());
+            new FakeUpdatePrompt(), whatsNew, new FakeDeploySummary(), new FakeBackupManager(),
+            new FakeAutoStart(), new FakeMcpServer());
 
         return (vm, editor, whatsNew);
     }

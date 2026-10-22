@@ -32,6 +32,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IWhatsNewService _whatsNew;
     private readonly IDeploySummaryService _deploySummary;
     private readonly IBackupManagerService _backupManager;
+    private readonly IAutoStartService _autoStart;
+    private readonly IMcpServerService _mcpServer;
     private readonly AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -55,7 +57,9 @@ public partial class MainWindowViewModel : ObservableObject
         IUpdatePromptService updatePrompt,
         IWhatsNewService whatsNew,
         IDeploySummaryService deploySummary,
-        IBackupManagerService backupManager)
+        IBackupManagerService backupManager,
+        IAutoStartService autoStart,
+        IMcpServerService mcpServer)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -74,6 +78,8 @@ public partial class MainWindowViewModel : ObservableObject
         _whatsNew = whatsNew;
         _deploySummary = deploySummary;
         _backupManager = backupManager;
+        _autoStart = autoStart;
+        _mcpServer = mcpServer;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -83,6 +89,11 @@ public partial class MainWindowViewModel : ObservableObject
         _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
         _updateRepository = _settings.UpdateRepository;
         _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
+        _closeToTray = _settings.CloseToTray;
+        _startWithOperatingSystem = _settings.StartWithOperatingSystem && autoStart.IsSupported;
+        _mcpServerEnabled = _settings.McpServerEnabled;
+        _mcpStatus = mcpServer.StatusText;
+        mcpServer.StatusChanged += () => Dispatcher.UIThread.Post(() => McpStatus = _mcpServer.StatusText);
         SyncRecent();
     }
 
@@ -168,6 +179,104 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _settings.RestoreSourcesOnStartup = value;
         _settingsStore.Save(_settings);
+    }
+
+    // ---- Background running: tray, sign-in start, MCP --------------------
+
+    /// <summary>Closing the window hides it to the tray instead of quitting.</summary>
+    [ObservableProperty]
+    private bool _closeToTray;
+
+    /// <summary>Start the app (in the tray) at sign-in.</summary>
+    [ObservableProperty]
+    private bool _startWithOperatingSystem;
+
+    /// <summary>Serve the deploy tools to Claude over MCP.</summary>
+    [ObservableProperty]
+    private bool _mcpServerEnabled;
+
+    [ObservableProperty]
+    private string _mcpStatus;
+
+    public bool AutoStartSupported => _autoStart.IsSupported;
+
+    /// <summary>Text for the "Start with …" option.</summary>
+    public string AutoStartLabel =>
+        OperatingSystem.IsWindows() ? "Start with Windows"
+        : OperatingSystem.IsMacOS() ? "Start at login"
+        : "Start when I sign in";
+
+    public string ClaudeCodeCommand => _mcpServer.ClaudeCodeCommand;
+
+    public string ClaudeDesktopConfig => _mcpServer.ClaudeDesktopConfig;
+
+    partial void OnCloseToTrayChanged(bool value)
+    {
+        _settings.CloseToTray = value;
+        _settingsStore.Save(_settings);
+    }
+
+    private bool _revertingAutoStart;
+
+    partial void OnStartWithOperatingSystemChanged(bool value)
+    {
+        if (_revertingAutoStart)
+            return;
+
+        try
+        {
+            _autoStart.SetEnabled(value);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not {(value ? "add" : "remove")} the sign-in entry: {ex.Message}";
+            Dispatcher.UIThread.Post(() => // put the checkbox back
+            {
+                _revertingAutoStart = true;
+                StartWithOperatingSystem = !value;
+                _revertingAutoStart = false;
+            });
+            return;
+        }
+
+        _settings.StartWithOperatingSystem = value;
+        _settingsStore.Save(_settings);
+    }
+
+    partial void OnMcpServerEnabledChanged(bool value)
+    {
+        _settings.McpServerEnabled = value;
+        _settingsStore.Save(_settings);
+        _ = _mcpServer.ApplyAsync(value, _settings.McpServerPort);
+    }
+
+    [RelayCommand]
+    private void RegenerateMcpToken()
+    {
+        _mcpServer.RegenerateToken();
+        StatusMessage = "Created a new MCP access token. Reconnect Claude with the new command or config.";
+    }
+
+    /// <summary>
+    /// Brings the background options in line with the settings once sources are loaded: refreshes the sign-in
+    /// entry (the executable may have moved) and starts the MCP server when enabled.
+    /// </summary>
+    public async Task RunStartupBackgroundServicesAsync()
+    {
+        if (StartWithOperatingSystem)
+        {
+            try
+            {
+                _autoStart.SetEnabled(true);
+            }
+            catch
+            {
+                // The entry from last time still works unless the app moved; not worth interrupting startup.
+            }
+        }
+
+        if (McpServerEnabled)
+            await _mcpServer.ApplyAsync(true, _settings.McpServerPort);
     }
 
     /// <summary>Window placement persisted from the previous session, for the view to restore.</summary>
@@ -630,17 +739,11 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var engineKinds = selectedProfiles.Select(p => p.Engine);
-        if (selectedScripts.Count > 0)
-            engineKinds = engineKinds.Append(PublishEngineKind.Script);
-        foreach (var engineKind in engineKinds.Distinct())
+        if (FindUnavailableEngine(selectedProfiles, selectedScripts) is { } engineError)
         {
-            if (!_engineFactory.Get(engineKind).IsAvailable(out var reason))
-            {
-                StatusMessage = $"{engineKind} engine unavailable: {reason}";
-                Log.Add(LogLine.System($"ERROR: {StatusMessage}"));
-                return;
-            }
+            StatusMessage = engineError;
+            Log.Add(LogLine.System($"ERROR: {StatusMessage}"));
+            return;
         }
 
         if (ConfirmBeforeDeploy)
@@ -661,18 +764,70 @@ public partial class MainWindowViewModel : ObservableObject
                 ConfirmBeforeDeploy = false; // persisted via OnConfirmBeforeDeployChanged
         }
 
+        // Remember what was typed for next time (the opt-in password goes to the OS secure store).
+        foreach (var profileVm in selectedProfiles)
+        {
+            if (!string.IsNullOrWhiteSpace(profileVm.UserName))
+                _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
+
+            PersistPassword(profileVm.Profile.FilePath, profileVm.RememberPassword, profileVm.Password);
+        }
+
+        foreach (var scriptVm in selectedScripts.Where(s => s.RequiresCredentials))
+        {
+            if (!string.IsNullOrWhiteSpace(scriptVm.UserName))
+                _settings.RememberedUserNames[scriptVm.Target.CredentialKey] = scriptVm.UserName;
+
+            PersistPassword(scriptVm.Target.CredentialKey, scriptVm.RememberPassword, scriptVm.Password);
+        }
+
+        _settingsStore.Save(_settings);
+
+        var summary = await RunDeploymentAsync(selectedProfiles, selectedScripts, RunInParallel, BackupBeforePublish, observer: null);
+        if (summary is not null)
+            await _deploySummary.ShowAsync(summary);
+    }
+
+    private string? FindUnavailableEngine(IEnumerable<ProfileViewModel> profiles, IReadOnlyCollection<ScriptTargetViewModel> scripts)
+    {
+        var engineKinds = profiles.Select(p => p.Engine);
+        if (scripts.Count > 0)
+            engineKinds = engineKinds.Append(PublishEngineKind.Script);
+        foreach (var engineKind in engineKinds.Distinct())
+        {
+            if (!_engineFactory.Get(engineKind).IsAvailable(out var reason))
+                return $"{engineKind} engine unavailable: {reason}";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Deploys the given rows with the credentials they hold, updating their status dots and the output as it
+    /// goes. Sets <see cref="IsRunning"/> before its first await, so a caller can fire and forget it. Returns the
+    /// summary to show, or null when the run was cancelled or aborted.
+    /// </summary>
+    private async Task<DeploySummaryViewModel?> RunDeploymentAsync(
+        IReadOnlyList<ProfileViewModel> profiles,
+        IReadOnlyList<ScriptTargetViewModel> scripts,
+        bool runInParallel,
+        bool backupBeforePublish,
+        IRunObserver? observer)
+    {
         // Status dots show this run only: clear every row, then mark what's queued.
-        foreach (var target in projects.SelectMany(p => p.Profiles.Cast<ISelectableTarget>().Concat(p.ScriptTargets)))
+        var queued = profiles.Cast<BackupHostViewModel>().Concat(scripts).ToHashSet();
+        foreach (var target in Sources.SelectMany(s => s.Projects)
+                     .SelectMany(p => p.Profiles.Cast<ISelectableTarget>().Concat(p.ScriptTargets)))
         {
             target.Status = PublishStatus.Pending;
-            target.IsQueued = target.IsSelected;
+            target.IsQueued = queued.Contains((BackupHostViewModel)target);
             target.ResultText = string.Empty;
         }
 
-        var jobsByTarget = new Dictionary<string, ISelectableTarget>();
+        var jobsByTarget = new Dictionary<string, BackupHostViewModel>();
         var jobs = new List<PublishJob>();
 
-        foreach (var profileVm in selectedProfiles)
+        foreach (var profileVm in profiles)
         {
             var job = new PublishJob
             {
@@ -686,14 +841,9 @@ public partial class MainWindowViewModel : ObservableObject
             };
             jobs.Add(job);
             jobsByTarget[job.Id] = profileVm;
-
-            if (!string.IsNullOrWhiteSpace(profileVm.UserName))
-                _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
-
-            PersistPassword(profileVm.Profile.FilePath, profileVm.RememberPassword, profileVm.Password);
         }
 
-        foreach (var scriptVm in selectedScripts)
+        foreach (var scriptVm in scripts)
         {
             var job = new PublishJob
             {
@@ -705,41 +855,43 @@ public partial class MainWindowViewModel : ObservableObject
             };
             jobs.Add(job);
             jobsByTarget[job.Id] = scriptVm;
-
-            if (scriptVm.RequiresCredentials)
-            {
-                if (!string.IsNullOrWhiteSpace(scriptVm.UserName))
-                    _settings.RememberedUserNames[scriptVm.Target.CredentialKey] = scriptVm.UserName;
-
-                PersistPassword(scriptVm.Target.CredentialKey, scriptVm.RememberPassword, scriptVm.Password);
-            }
         }
-
-        _settingsStore.Save(_settings);
 
         IsRunning = true;
         _runCts = new CancellationTokenSource();
         var startedJobs = new HashSet<string>();
         DeploySummaryViewModel? summary = null;
-        Log.Add(LogLine.System($"── Deploying {jobs.Count} target(s) ({(RunInParallel ? "parallel" : "sequential")}) ──"));
+        var outcome = PublishStatus.Failed;
+        var heading = $"── Deploying {jobs.Count} target(s) ({(runInParallel ? "parallel" : "sequential")}) ──";
+        Log.Add(LogLine.System(heading));
+        observer?.Output(heading);
         StatusMessage = $"Deploying {jobs.Count} target(s)…";
 
-        void OnOutput(JobOutput output) => Dispatcher.UIThread.Post(() =>
+        void OnOutput(JobOutput output)
         {
-            if (startedJobs.Add(output.JobId) && jobsByTarget.TryGetValue(output.JobId, out var vmStart))
-                vmStart.Status = PublishStatus.Running;
+            observer?.Output($"[{output.JobDisplayName}] {output.Line.Text}");
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (startedJobs.Add(output.JobId) && jobsByTarget.TryGetValue(output.JobId, out var vmStart))
+                {
+                    ((ISelectableTarget)vmStart).Status = PublishStatus.Running;
+                    observer?.TargetChanged(vmStart, PublishStatus.Running, null);
+                }
 
-            AppendLog(LogLine.From(output.JobDisplayName, output.Line));
-        });
+                AppendLog(LogLine.From(output.JobDisplayName, output.Line));
+            });
+        }
 
         void OnJobCompleted(PublishResult result) => Dispatcher.UIThread.Post(() =>
         {
             if (jobsByTarget.TryGetValue(result.JobId, out var vm))
             {
-                vm.Status = result.Status;
-                vm.ResultText = result.IsSuccess
+                var row = (ISelectableTarget)vm;
+                row.Status = result.Status;
+                row.ResultText = result.IsSuccess
                     ? $"OK ({StepTimings.Format(result.Duration)})"
                     : result.ErrorMessage ?? result.Status.ToString();
+                observer?.TargetChanged(vm, result.Status, result.IsSuccess ? result.TimingText : row.ResultText);
             }
         });
 
@@ -747,9 +899,9 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var options = new DeploymentRunOptions
             {
-                RunInParallel = RunInParallel,
+                RunInParallel = runInParallel,
                 MaxParallelism = 4,
-                BackupBeforePublish = BackupBeforePublish,
+                BackupBeforePublish = backupBeforePublish,
                 DeployBackupPreview = DeployBackupPreview,
             };
             var runStarted = Stopwatch.GetTimestamp();
@@ -759,14 +911,15 @@ public partial class MainWindowViewModel : ObservableObject
 
             var ok = results.Count(r => r.IsSuccess);
             var failed = results.Count - ok;
+            outcome = failed == 0 ? PublishStatus.Succeeded : PublishStatus.Failed;
             StatusMessage = failed == 0
                 ? $"All {ok} target(s) succeeded in {runTime}."
                 : $"{ok} succeeded, {failed} failed ({runTime}).";
             Log.Add(LogLine.System($"── {StatusMessage} ──"));
 
             // A backup taken during the run produces a new snapshot — refresh the restore lists.
-            if (BackupBeforePublish)
-                foreach (var host in selectedProfiles.Cast<BackupHostViewModel>().Concat(selectedScripts))
+            if (backupBeforePublish)
+                foreach (var host in queued)
                     _ = LoadBackupsAsync(host);
 
             // Record/log the git history for profiles that deployed successfully (informative only).
@@ -778,6 +931,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
+            outcome = PublishStatus.Cancelled;
             StatusMessage = "Deployment cancelled.";
             Log.Add(LogLine.System("── Cancelled ──"));
         }
@@ -794,12 +948,19 @@ public partial class MainWindowViewModel : ObservableObject
 
             // Anything that never reported a result (cancelled or aborted run) shouldn't stay "waiting".
             // Real results are posted to the dispatcher and land after this, so they still win.
-            foreach (var target in jobsByTarget.Values.Where(t => t.Status is PublishStatus.Pending or PublishStatus.Running))
+            foreach (var target in jobsByTarget.Values.Cast<ISelectableTarget>()
+                         .Where(t => t.Status is PublishStatus.Pending or PublishStatus.Running))
                 target.Status = PublishStatus.Cancelled;
         }
 
-        if (summary is not null)
-            await _deploySummary.ShowAsync(summary);
+        // Posted so it lands after the per-target results already queued on the dispatcher.
+        if (observer is not null)
+        {
+            var message = StatusMessage;
+            Dispatcher.UIThread.Post(() => observer.Completed(outcome, message));
+        }
+
+        return summary;
     }
 
     private bool CanCancel() => IsRunning;
@@ -909,34 +1070,45 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanDeploy))]
     private async Task RestoreAsync(BackupEntryViewModel? entry)
     {
-        if (entry is null)
-            return;
+        if (entry is not null)
+            await RunRestoreAsync(entry.Parent, entry.Backup, observer: null);
+    }
 
-        var host = entry.Parent;
-
+    /// <summary>Restores a row's snapshot. Sets <see cref="IsRunning"/> before its first await.</summary>
+    private async Task RunRestoreAsync(BackupHostViewModel host, DeploymentBackup backup, IRunObserver? observer)
+    {
         IsRunning = true;
         _runCts = new CancellationTokenSource();
-        Log.Add(LogLine.System($"── Restoring {host.Name} from {entry.Backup.DisplayName} ──"));
+        var heading = $"── Restoring {host.Name} from {backup.DisplayName} ──";
+        Log.Add(LogLine.System(heading));
+        observer?.Output(heading);
+        observer?.TargetChanged(host, PublishStatus.Running, null);
         StatusMessage = $"Restoring {host.Name}…";
+        var outcome = PublishStatus.Failed;
 
-        void Sink(OutputLine line) =>
+        void Sink(OutputLine line)
+        {
+            observer?.Output($"[{host.Name}] {line.Text}");
             Dispatcher.UIThread.Post(() => AppendLog(LogLine.From(host.Name, line)));
+        }
 
         try
         {
             await _backupService.RestoreAsync(
-                entry.Backup,
+                backup,
                 host.BackupOwner,
                 host.BuildCredentials(),
                 allowUntrustedCertificate: true,
                 Sink,
                 _runCts.Token);
 
+            outcome = PublishStatus.Succeeded;
             StatusMessage = $"Restored {host.Name}.";
             Log.Add(LogLine.System($"── Restored {host.Name} ──"));
         }
         catch (OperationCanceledException)
         {
+            outcome = PublishStatus.Cancelled;
             StatusMessage = "Restore cancelled.";
             Log.Add(LogLine.System("── Restore cancelled ──"));
         }
@@ -951,6 +1123,84 @@ public partial class MainWindowViewModel : ObservableObject
             _runCts?.Dispose();
             _runCts = null;
         }
+
+        if (observer is not null)
+        {
+            var message = StatusMessage;
+            Dispatcher.UIThread.Post(() =>
+            {
+                observer.TargetChanged(host, outcome, message);
+                observer.Completed(outcome, message);
+            });
+        }
+    }
+
+    // ---- Remote control (MCP) ---------------------------------------------
+    // Called on the UI thread by the MCP bridge. Unlike the window's commands these never open a dialog: the
+    // caller has already confirmed with its user, and nobody may be looking at the window.
+
+    /// <summary>Why a remote deploy or restore can't start right now, or null when it can.</summary>
+    public string? RemoteBusyReason =>
+        IsRunning ? "A deployment or restore is already running in the app. Wait for it to finish (see get_run)."
+        : IsLoading ? "The app is still loading its sources. Try again in a moment."
+        : null;
+
+    /// <summary>
+    /// Starts deploying the given rows with their saved credentials, without the confirmation or summary windows.
+    /// Returns why it couldn't start, or null once it has (the observer then hears about the run).
+    /// </summary>
+    public string? StartRemoteDeploy(
+        IReadOnlyList<BackupHostViewModel> targets, bool? runInParallel, bool? backupBeforePublish, IRunObserver observer)
+    {
+        if (RemoteBusyReason is { } busy)
+            return busy;
+
+        var profiles = targets.OfType<ProfileViewModel>().ToList();
+        var scripts = targets.OfType<ScriptTargetViewModel>().ToList();
+
+        var missingPasswords = profiles.Where(p => p.RequiresCredentials && string.IsNullOrEmpty(p.Password)).Select(p => p.Name)
+            .Concat(scripts.Where(s => s.RequiresCredentials && string.IsNullOrEmpty(s.Password)).Select(s => s.Name))
+            .ToList();
+        if (missingPasswords.Count > 0)
+            return $"No saved password for {string.Join(", ", missingPasswords)}. Enter it in the app and tick " +
+                   "'Remember' (passwords are never sent over MCP).";
+
+        if (scripts.FirstOrDefault(s => s.HasProblem) is { } broken)
+            return $"Script '{broken.Name}' can't run: {broken.Problem}";
+
+        if (FindUnavailableEngine(profiles, scripts) is { } engineError)
+            return engineError;
+
+        _ = RunDeploymentAsync(profiles, scripts,
+            runInParallel ?? RunInParallel, backupBeforePublish ?? BackupBeforePublish, observer);
+        return null;
+    }
+
+    /// <summary>Starts restoring a snapshot of a row. Returns why it couldn't start, or null once it has.</summary>
+    public string? StartRemoteRestore(BackupHostViewModel host, DeploymentBackup backup, IRunObserver observer)
+    {
+        if (RemoteBusyReason is { } busy)
+            return busy;
+
+        _ = RunRestoreAsync(host, backup, observer);
+        return null;
+    }
+
+    /// <summary>A row's snapshots straight from its store, newest first.</summary>
+    public Task<IReadOnlyList<DeploymentBackup>> ListBackupsAsync(BackupHostViewModel host) =>
+        _backupService.ListAsync(host.BackupOwner);
+
+    /// <summary>What a profile's project gained in git since it was last deployed, as plain text.</summary>
+    public async Task<string> BuildReleaseSummaryTextAsync(ProfileViewModel profile)
+    {
+        if (!await _gitHistory.IsAvailableAsync())
+            return "git is not available on this machine, so no release summary can be built.";
+
+        var previous = _settings.DeployHistory.TryGetValue(profile.Profile.FilePath, out var record)
+            ? record.ProjectShas
+            : new Dictionary<string, string>();
+        var summary = await _gitHistory.BuildSummaryAsync(profile.Parent.Project.ProjectPath, profile.Parent.Name, previous);
+        return summary.ToPlainText();
     }
 
     [RelayCommand(CanExecute = nameof(CanDeploy))]

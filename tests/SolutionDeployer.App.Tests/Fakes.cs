@@ -112,3 +112,38 @@ public sealed class FakeWhatsNew : IWhatsNewService
         return Task.FromResult(true);
     }
 }
+
+/// <summary>Sign-in entry stub; records the last requested state instead of touching the OS.</summary>
+public sealed class FakeAutoStart : IAutoStartService
+{
+    public bool IsSupported => true;
+
+    public bool? Enabled { get; private set; }
+
+    public void SetEnabled(bool enabled) => Enabled = enabled;
+}
+
+/// <summary>MCP server stub; never listens.</summary>
+public sealed class FakeMcpServer : IMcpServerService
+{
+    public bool IsRunning { get; private set; }
+
+    public string StatusText => IsRunning ? "Listening" : "Off";
+
+    public event Action? StatusChanged;
+
+    public Task ApplyAsync(bool enabled, int port)
+    {
+        IsRunning = enabled;
+        StatusChanged?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync() => ApplyAsync(false, 0);
+
+    public void RegenerateToken() { }
+
+    public string ClaudeCodeCommand => "claude mcp add …";
+
+    public string ClaudeDesktopConfig => "{}";
+}

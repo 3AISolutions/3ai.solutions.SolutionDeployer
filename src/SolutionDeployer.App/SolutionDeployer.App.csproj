@@ -34,5 +34,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SolutionDeployer.Core\SolutionDeployer.Core.csproj" />
+    <ProjectReference Include="..\SolutionDeployer.Mcp\SolutionDeployer.Mcp.csproj" />
   </ItemGroup>
 </Project>

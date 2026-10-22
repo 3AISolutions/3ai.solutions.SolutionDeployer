@@ -29,6 +29,26 @@ sequentially or in parallel — with live build output. Self-updates from GitHub
   to disk and are redacted from the logged command line; usernames can be remembered.
 - **Live output console** with per-job tagging and error highlighting; cancel mid-run.
 - **Self-update** via [Velopack](https://velopack.io) from GitHub Releases.
+- **Runs in the background** (optional) — under *Options*, choose whether closing the window keeps the app
+  running in the tray or quits it, and whether it starts (in the tray) when you sign in.
+- **Deploy from Claude (MCP)** — see below.
+
+## Deploying from Claude (MCP)
+
+Tick *Options → Let Claude deploy through this app*. The app then serves an MCP server on
+`http://localhost:47821/mcp` (this computer only; every request needs the access token). Keep the app running
+in the tray, and ideally starting at sign-in, so Claude can always reach it.
+
+- **Claude Code**: *Options → Copy Claude Code command* and run it once
+  (`claude mcp add --transport http --scope user solution-deployer … --header "Authorization: Bearer …"`).
+- **Claude Desktop**: *Options → Copy Claude Desktop config* and merge it into `claude_desktop_config.json`
+  (it bridges through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote), so Node.js is needed).
+
+Tools: `list_targets`, `refresh_targets`, `deploy`, `get_run`, `cancel_run`, `list_backups`, `restore_backup`,
+`get_release_summary`. A deploy started from Claude runs exactly like *Deploy Selected* (backups, build once,
+parallelism, release history) and shows live in the window, but without the confirmation dialog — Claude asks
+you instead. Passwords are never sent over MCP: save a target's password in the app (*Remember*) first.
+*New access token* disconnects every client set up with the old one.
 
 ## The publish commands
 
@@ -50,6 +70,7 @@ msbuild <project> /restore /t:Publish /p:Configuration=Release \
 |------|------|
 | `src/SolutionDeployer.Core` | Domain models, solution/profile parsing, publish engines, orchestration. No UI dependency. |
 | `src/SolutionDeployer.App`  | Avalonia (MVVM) desktop UI + Velopack self-update. |
+| `src/SolutionDeployer.Mcp`  | MCP server (tools, run tracking, localhost HTTP host) driven by the app. |
 | `tests/SolutionDeployer.Core.Tests` | xUnit tests for parsing & profile discovery. |
 
 ## Building & running

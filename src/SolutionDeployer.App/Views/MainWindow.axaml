@@ -215,6 +215,30 @@
                                     <TextBlock Text="ON STARTUP" Classes="caption" />
                                     <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
                                               ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
+                                    <CheckBox Content="{Binding AutoStartLabel}" IsChecked="{Binding StartWithOperatingSystem}"
+                                              IsEnabled="{Binding AutoStartSupported}"
+                                              ToolTip.Tip="Start the app when you sign in. It starts in the tray when closing keeps it running there" />
+                                    <Separator Margin="0,2" />
+                                    <TextBlock Text="WHEN CLOSING THE WINDOW" Classes="caption" />
+                                    <RadioButton GroupName="close" Content="Keep running in the tray" IsChecked="{Binding CloseToTray}"
+                                                 ToolTip.Tip="The app keeps running (and serving Claude) with an icon in the tray. Quit from the tray icon's menu" />
+                                    <RadioButton GroupName="close" Content="Quit the application" IsChecked="{Binding !CloseToTray}" />
+                                    <Separator Margin="0,2" />
+                                    <TextBlock Text="CLAUDE (MCP)" Classes="caption" />
+                                    <CheckBox Content="Let Claude deploy through this app" IsChecked="{Binding McpServerEnabled}"
+                                              ToolTip.Tip="Serves an MCP server on this computer only (localhost) that lists targets, deploys, follows runs and restores snapshots. Requests need the access token" />
+                                    <TextBlock Text="{Binding McpStatus}" Classes="hint" MaxWidth="260" IsVisible="{Binding McpServerEnabled}" />
+                                    <StackPanel Spacing="6" IsVisible="{Binding McpServerEnabled}">
+                                        <Button Content="Copy Claude Code command" HorizontalAlignment="Stretch"
+                                                Click="OnCopyClaudeCodeCommandClick"
+                                                ToolTip.Tip="A 'claude mcp add' command that connects Claude Code to this app (includes the access token)" />
+                                        <Button Content="Copy Claude Desktop config" HorizontalAlignment="Stretch"
+                                                Click="OnCopyClaudeDesktopConfigClick"
+                                                ToolTip.Tip="An mcpServers entry for claude_desktop_config.json (bridged with mcp-remote; needs Node.js)" />
+                                        <Button Content="New access token" HorizontalAlignment="Stretch"
+                                                Command="{Binding RegenerateMcpTokenCommand}"
+                                                ToolTip.Tip="Replace the token: clients set up with the old one must be reconnected" />
+                                    </StackPanel>
                                     <Separator Margin="0,2" />
                                     <Button Content="Backup destinations…" HorizontalAlignment="Stretch"
                                             Command="{Binding ManageBackupTargetsCommand}"

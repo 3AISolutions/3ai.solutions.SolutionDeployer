@@ -77,6 +77,14 @@ public partial class MainWindow : Window
         {
             vm.SaveWindowPlacement(Width, Height, Position.X, Position.Y, false);
         }
+
+        // The user closed the window: keep running in the tray if they chose to. Quitting from the tray, or the
+        // OS shutting down, closes it for real.
+        if (vm.CloseToTray && e.CloseReason == WindowCloseReason.WindowClosing)
+        {
+            e.Cancel = true;
+            Hide();
+        }
     }
 
     private void OnLogChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -87,6 +95,24 @@ public partial class MainWindow : Window
         // Auto-scroll the output to the newest line.
         Dispatcher.UIThread.Post(() => this.FindControl<ScrollViewer>("LogScroller")?.ScrollToEnd(),
             DispatcherPriority.Background);
+    }
+
+    private async void OnCopyClaudeCodeCommandClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && Clipboard is not null)
+        {
+            await Clipboard.SetTextAsync(vm.ClaudeCodeCommand);
+            vm.StatusMessage = "Copied the Claude Code command (it contains the access token: share it only with yourself).";
+        }
+    }
+
+    private async void OnCopyClaudeDesktopConfigClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && Clipboard is not null)
+        {
+            await Clipboard.SetTextAsync(vm.ClaudeDesktopConfig);
+            vm.StatusMessage = "Copied the Claude Desktop config: merge it into claude_desktop_config.json and restart Claude.";
+        }
     }
 
     private async void OnRecentSelectionChanged(object? sender, SelectionChangedEventArgs e)

@@ -88,6 +88,21 @@ public sealed class AppSettings
     /// <summary>Ask for confirmation (listing the targets) before a deploy runs.</summary>
     public bool ConfirmBeforeDeploy { get; set; } = true;
 
+    /// <summary>Closing the window hides it to the tray (the app keeps running) instead of quitting.</summary>
+    public bool CloseToTray { get; set; } = true;
+
+    /// <summary>Start the app (in the tray) when the user signs in to the operating system.</summary>
+    public bool StartWithOperatingSystem { get; set; }
+
+    /// <summary>
+    /// Serve the deploy tools over MCP on localhost, so Claude can list targets and deploy. The access token
+    /// lives in the OS credential store, not here.
+    /// </summary>
+    public bool McpServerEnabled { get; set; }
+
+    /// <summary>The localhost port the MCP server listens on.</summary>
+    public int McpServerPort { get; set; } = 47821;
+
     // --- Last window placement (restored on startup). Null until first saved. ---
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }

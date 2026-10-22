@@ -2,9 +2,11 @@
   <Folder Name="/src/">
     <Project Path="src/SolutionDeployer.Core/SolutionDeployer.Core.csproj" />
     <Project Path="src/SolutionDeployer.App/SolutionDeployer.App.csproj" />
+    <Project Path="src/SolutionDeployer.Mcp/SolutionDeployer.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SolutionDeployer.Core.Tests/SolutionDeployer.Core.Tests.csproj" />
     <Project Path="tests/SolutionDeployer.App.Tests/SolutionDeployer.App.Tests.csproj" />
+    <Project Path="tests/SolutionDeployer.Mcp.Tests/SolutionDeployer.Mcp.Tests.csproj" />
   </Folder>
 </Solution>

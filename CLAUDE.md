@@ -46,6 +46,16 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
 - **`src/SolutionDeployer.App`** — Avalonia MVVM (CommunityToolkit.Mvvm). DI is wired in
   `App.axaml.cs`. `Services/UpdateService` wraps Velopack. `Program.cs` calls `VelopackApp.Build().Run()`
   first — keep it first.
+  The app can outlive its window: `AppSettings.CloseToTray` hides it to a tray icon on close (`ShutdownMode` is
+  explicit; quit from the tray), `StartWithOperatingSystem` registers a sign-in entry (`AutoStartService`: Run key /
+  XDG autostart / LaunchAgent) that launches with `--background`, and `SingleInstance` (mutex + named pipe) makes a
+  second launch show the running copy's window instead.
+- **`src/SolutionDeployer.Mcp`** — MCP server (official `ModelContextProtocol.AspNetCore` SDK, Kestrel in-process) on
+  `http://localhost:47821/mcp`, loopback only, `Authorization: Bearer` token required (token kept in
+  `ICredentialStore`, never settings). `DeployerTools` call `IDeployerHost`, which the app implements in
+  `Services/McpDeployerBridge` over `MainWindowViewModel` (on the UI thread) — an MCP deploy *is* the window's
+  deploy, minus the confirm/summary dialogs. Deploys return a `DeploymentRun` at once; clients poll `get_run`.
+  Passwords never travel over MCP: targets must have theirs saved in the app.
 - **`tests/SolutionDeployer.Core.Tests`** — xUnit. Fixtures under `Fixtures/` are copied to output;
   project/solution files need **explicit** `<None Include>` (default globs exclude them).
 
