@@ -61,7 +61,7 @@ public sealed class RemoteControlTests : IDisposable
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), new FakeScriptEditor(), backupService,
             new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
             new FakeUpdatePrompt(), new FakeWhatsNew(), new FakeDeploySummary(), new FakeBackupManager(),
-            autoStart, mcp);
+            autoStart, mcp, new FakeSettingsBackup());
         return (vm, autoStart, mcp);
     }
 

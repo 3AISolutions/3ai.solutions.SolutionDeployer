@@ -34,7 +34,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IBackupManagerService _backupManager;
     private readonly IAutoStartService _autoStart;
     private readonly IMcpServerService _mcpServer;
-    private readonly AppSettings _settings;
+    private readonly ISettingsBackupService _settingsBackup;
+    private AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
     private bool _applyingState;
@@ -59,7 +60,8 @@ public partial class MainWindowViewModel : ObservableObject
         IDeploySummaryService deploySummary,
         IBackupManagerService backupManager,
         IAutoStartService autoStart,
-        IMcpServerService mcpServer)
+        IMcpServerService mcpServer,
+        ISettingsBackupService settingsBackup)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -80,6 +82,7 @@ public partial class MainWindowViewModel : ObservableObject
         _backupManager = backupManager;
         _autoStart = autoStart;
         _mcpServer = mcpServer;
+        _settingsBackup = settingsBackup;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -1065,6 +1068,100 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var host in hosts.Where(h => h.SupportsBackup))
             _ = LoadBackupsAsync(host);
+    }
+
+    // ---- Settings export / restore ----------------------------------------
+
+    /// <summary>File (beside settings.json) that holds the settings replaced by the latest restore.</summary>
+    public const string BeforeRestoreFileName = "settings.before-restore.json";
+
+    [RelayCommand]
+    private async Task ExportRestoreSettingsAsync()
+    {
+        var restored = await _settingsBackup.ShowAsync(_settings, canRestore: !IsRunning);
+        if (restored is null)
+            return;
+
+        // A deploy (from Claude, say) may have started while the window was open.
+        if (IsRunning)
+        {
+            StatusMessage = "Settings not restored: a deploy is running. Restore once it has finished.";
+            return;
+        }
+
+        var secrets = restored.Import.Secrets;
+        var restoredSecrets = await ApplyRestoredSettingsAsync(restored.Import.Settings, secrets);
+        var passwords = secrets.Count == 0 ? string.Empty
+            : restoredSecrets == secrets.Count ? $", {restoredSecrets} saved password(s)"
+            : ". Its saved passwords were skipped: no secure credential store on this computer";
+        StatusMessage = $"Restored settings from {Path.GetFileName(restored.FilePath)}: {Sources.Count} source(s){passwords}. " +
+                        $"The previous settings are in {BeforeRestoreFileName}.";
+    }
+
+    /// <summary>
+    /// Replaces the settings with <paramref name="restored"/> (keeping the ones that belong to this machine), then
+    /// reloads every source from the new list. The replaced settings are exported to
+    /// <see cref="BeforeRestoreFileName"/> first, so the restore can itself be undone (that file holds no passwords).
+    /// </summary>
+    /// <param name="secrets">Saved passwords from the export, written to the credential store (replacing any there).</param>
+    /// <returns>How many of <paramref name="secrets"/> were saved.</returns>
+    public async Task<int> ApplyRestoredSettingsAsync(
+        AppSettings restored, IReadOnlyDictionary<string, string>? secrets = null)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(_settingsStore.FilePath))!;
+            SettingsTransfer.Export(_settings, Path.Combine(dir, BeforeRestoreFileName), password: null);
+        }
+        catch
+        {
+            // Best-effort: the restore was asked for, and the user can still export first themselves.
+        }
+
+        SettingsTransfer.KeepLocal(restored, _settings);
+        restored.MigrateLegacy();
+        _settings = restored;
+
+        // Before the save and the source reload, so the profiles load with their passwords and the automatic
+        // export (if any) picks them up.
+        var savedSecrets = 0;
+        if (secrets is { Count: > 0 } && _credentialStore.IsAvailable)
+        {
+            foreach (var (key, secret) in secrets)
+            {
+                _credentialStore.Set(key, secret);
+                savedSecrets++;
+            }
+        }
+
+        _settingsStore.Save(_settings);
+
+        RunInParallel = _settings.RunInParallel;
+        BackupBeforePublish = _settings.BackupBeforePublish;
+        DeployBackupPreview = _settings.DeployBackupPreview;
+        ConfirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
+        RestoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
+        CloseToTray = _settings.CloseToTray;
+        UpdateRepository = _settings.UpdateRepository;
+        SyncRecent();
+
+        IsLoading = true;
+        Sources.Clear();
+        try
+        {
+            foreach (var source in _settings.Sources.ToList())
+                Sources.Add(await BuildSourceAsync(source));
+        }
+        finally
+        {
+            IsLoading = false;
+            OnPropertyChanged(nameof(SelectedCount));
+            OnPropertyChanged(nameof(HasSources));
+            if (FilterText.Length > 0)
+                ApplyFilter();
+        }
+
+        return savedSecrets;
     }
 
     [RelayCommand(CanExecute = nameof(CanDeploy))]

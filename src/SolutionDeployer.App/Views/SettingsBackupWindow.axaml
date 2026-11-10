@@ -1,0 +1,136 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.SettingsBackupWindow"
+        x:DataType="vm:SettingsBackupViewModel"
+        Title="Export / restore settings"
+        Width="620" Height="700" MinWidth="520" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <Window.Styles>
+        <Style Selector="StackPanel.field">
+            <Setter Property="Spacing" Value="4" />
+        </Style>
+        <Style Selector="Border.card > StackPanel">
+            <Setter Property="Spacing" Value="10" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+            <TextBlock Text="Export / restore settings" Classes="heading" />
+            <TextBlock Classes="subheading"
+                       Text="An export holds your sources, script targets, selections, backup destinations, deploy history and options. A password-protected export can also hold the saved passwords (profiles, scripts, S3 secret keys); an export without a password never does." />
+        </StackPanel>
+
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="*,Auto">
+                <ProgressBar Grid.Column="0" IsIndeterminate="True" IsVisible="{Binding IsBusy}"
+                             VerticalAlignment="Center" Margin="0,0,12,0" MaxWidth="160" HorizontalAlignment="Left" />
+                <StackPanel Grid.Column="1" Classes="buttons">
+                    <Button Content="Cancel" Command="{Binding CloseCommand}" IsCancel="True" />
+                    <Button Content="Save" Command="{Binding SaveCommand}" Classes="accent" IsDefault="True"
+                            IsEnabled="{Binding !IsBusy}"
+                            ToolTip.Tip="Save the automatic export settings" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel Spacing="14" Margin="0,0,10,0">
+
+                <!-- Automatic export -->
+                <Border Classes="card" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="AUTOMATIC EXPORT" Classes="caption" />
+                        <CheckBox Content="Export my settings automatically whenever they change"
+                                  IsChecked="{Binding AutoExportEnabled}" />
+                        <StackPanel Spacing="10" IsEnabled="{Binding AutoExportEnabled}">
+                            <StackPanel Classes="field">
+                                <TextBlock Text="Export file" Classes="label" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                    <TextBox Grid.Column="0" Text="{Binding AutoExportPath}"
+                                             PlaceholderText="e.g. D:\OneDrive\Backups\SolutionDeployer-settings.json" />
+                                    <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseAutoExportPathCommand}" />
+                                </Grid>
+                                <TextBlock Text="Replaced each time. A synced folder (OneDrive, Dropbox, a network share) keeps a copy off this computer."
+                                           Classes="hint" />
+                            </StackPanel>
+                            <CheckBox Content="Protect with a password" IsChecked="{Binding AutoExportEncrypt}"
+                                      IsEnabled="{Binding CredentialStoreAvailable}"
+                                      ToolTip.Tip="Encrypts the export (AES-256). The password is kept in this computer's credential store so exports can run unattended" />
+                            <TextBlock Text="No secure credential store on this computer, so automatic exports can't be password-protected."
+                                       Classes="hint" IsVisible="{Binding !CredentialStoreAvailable}" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding AutoExportEncrypt}">
+                                <StackPanel Grid.Column="0" Classes="field">
+                                    <TextBlock Text="Password" Classes="label" />
+                                    <TextBox Text="{Binding AutoExportPassword}" PasswordChar="•"
+                                             PlaceholderText="{Binding AutoExportPasswordHint}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Classes="field">
+                                    <TextBlock Text="Confirm password" Classes="label" />
+                                    <TextBox Text="{Binding AutoExportPasswordConfirm}" PasswordChar="•" />
+                                </StackPanel>
+                            </Grid>
+                            <CheckBox Content="Include saved passwords" IsChecked="{Binding AutoExportIncludeSecrets}"
+                                      IsVisible="{Binding AutoExportEncrypt}"
+                                      ToolTip.Tip="Also export the passwords saved for profiles and scripts, and the S3 secret keys, inside the encrypted file" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding AutoExportStatus}" Classes="hint" TextWrapping="Wrap"
+                                   IsVisible="{Binding AutoExportStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Export now -->
+                <Border Classes="card" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="EXPORT NOW" Classes="caption" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Classes="field">
+                                <TextBlock Text="Password (optional)" Classes="label" />
+                                <TextBox Text="{Binding ExportPassword}" PasswordChar="•" PlaceholderText="Leave empty for no password" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Classes="field">
+                                <TextBlock Text="Confirm password" Classes="label" />
+                                <TextBox Text="{Binding ExportPasswordConfirm}" PasswordChar="•" />
+                            </StackPanel>
+                        </Grid>
+                        <CheckBox Content="Include saved passwords" IsChecked="{Binding ExportIncludeSecrets}"
+                                  IsEnabled="{Binding CanIncludeExportSecrets}"
+                                  ToolTip.Tip="Only with a password: the saved passwords for profiles and scripts, and the S3 secret keys, go inside the encrypted file" />
+                        <Button Content="Export to file…" Command="{Binding ExportCommand}" IsEnabled="{Binding !IsBusy}" />
+                        <TextBlock Text="{Binding ExportStatus}" Classes="hint" TextWrapping="Wrap"
+                                   IsVisible="{Binding ExportStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Restore -->
+                <Border Classes="card" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="RESTORE FROM AN EXPORT" Classes="caption" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBox Grid.Column="0" Text="{Binding RestorePath}" IsReadOnly="True"
+                                     PlaceholderText="Choose an export file" />
+                            <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseRestoreCommand}" />
+                        </Grid>
+                        <TextBlock Text="{Binding RestoreInfo}" Classes="hint"
+                                   IsVisible="{Binding RestoreInfo, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <StackPanel Classes="field" IsVisible="{Binding RestoreNeedsPassword}">
+                            <TextBlock Text="Password" Classes="label" />
+                            <TextBox Text="{Binding RestorePassword}" PasswordChar="•" />
+                        </StackPanel>
+                        <TextBlock Classes="hint" IsVisible="{Binding HasRestoreFile}"
+                                   Text="Replaces your sources, script targets, selections, backup destinations and options with the export's. Saved passwords in the export are saved on this computer, replacing the same ones here. Window placement, start-at-sign-in, Claude (MCP) and the automatic export stay as they are here. Your current settings (without passwords) are exported to settings.before-restore.json first." />
+                        <Button Content="Restore these settings" Command="{Binding RestoreCommand}" Classes="danger"
+                                IsEnabled="{Binding HasRestoreFile}" />
+                        <TextBlock Text="A deploy is running. Restore once it has finished." Classes="hint"
+                                   IsVisible="{Binding !CanRestore}" />
+                        <TextBlock Text="{Binding RestoreStatus}" Classes="hint" TextWrapping="Wrap"
+                                   IsVisible="{Binding RestoreStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

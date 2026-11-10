@@ -147,3 +147,10 @@ public sealed class FakeMcpServer : IMcpServerService
 
     public string ClaudeDesktopConfig => "{}";
 }
+
+/// <summary>Settings backup stub: never restores (tests call ApplyRestoredSettingsAsync directly).</summary>
+public sealed class FakeSettingsBackup : ISettingsBackupService
+{
+    public Task<RestoredSettings?> ShowAsync(SolutionDeployer.Core.Configuration.AppSettings settings, bool canRestore) =>
+        Task.FromResult<RestoredSettings?>(null);
+}

@@ -45,16 +45,29 @@ public sealed class SettingsStore
         return new AppSettings();
     }
 
+    /// <summary>The settings file this store reads and writes.</summary>
+    public string FilePath => _filePath;
+
+    /// <summary>
+    /// Raised after every successful save, with the JSON that was written: a snapshot that stays valid however the
+    /// settings object changes afterwards.
+    /// </summary>
+    public event Action<string>? Saved;
+
     public void Save(AppSettings settings)
     {
+        string json;
         try
         {
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
+            json = JsonSerializer.Serialize(settings, JsonOptions);
             File.WriteAllText(_filePath, json);
         }
         catch
         {
             // Non-fatal: settings persistence is best-effort.
+            return;
         }
+
+        Saved?.Invoke(json);
     }
 }

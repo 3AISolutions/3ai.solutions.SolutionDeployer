@@ -25,12 +25,17 @@ sequentially or in parallel — with live build output. Self-updates from GitHub
   standalone targets (e.g. publish → `scp` → restart a service). The interpreter is inferred from the
   extension; scripts receive their configured arguments plus `SD_PROJECT_PATH` / `SD_PROJECT_DIR` /
   `SD_PROJECT_NAME` / `SD_CONFIGURATION` context, and run in the same selectable batch as profiles.
-- **Per-target credentials** (username/password) for MSDeploy publishes. Passwords are never written
-  to disk and are redacted from the logged command line; usernames can be remembered.
+- **Per-target credentials** (username/password) for MSDeploy publishes. Passwords are kept only in the
+  OS credential store (or, by choice, inside a password-protected settings export), never in the settings
+  file, and are redacted from the logged command line; usernames can be remembered.
 - **Live output console** with per-job tagging and error highlighting; cancel mid-run.
 - **Self-update** via [Velopack](https://velopack.io) from GitHub Releases.
 - **Runs in the background** (optional) — under *Options*, choose whether closing the window keeps the app
   running in the tray or quits it, and whether it starts (in the tray) when you sign in.
+- **Export / restore settings** — under *Options → Export / restore settings…*, export your sources, script
+  targets, backup destinations and options to a file, optionally encrypted with a password (AES-256), and keep
+  that file up to date automatically whenever settings change. Password-protected exports can carry the saved
+  passwords too. Restore from an export on this or another computer.
 - **Deploy from Claude (MCP)** — see below.
 
 ## Deploying from Claude (MCP)

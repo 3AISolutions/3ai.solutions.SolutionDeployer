@@ -9,6 +9,7 @@ using SolutionDeployer.App.Services;
 using SolutionDeployer.App.ViewModels;
 using SolutionDeployer.App.Views;
 using SolutionDeployer.Core;
+using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.WhatsNew;
 using SolutionDeployer.Mcp;
 
@@ -41,6 +42,7 @@ public partial class App : Application
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
             services.AddSingleton<IBackupManagerService, BackupManagerService>();
+            services.AddSingleton<ISettingsBackupService, SettingsBackupService>();
             services.AddSingleton<IUpdatePromptService, UpdatePromptService>();
             services.AddSingleton<WhatsNewProvider>();
             services.AddSingleton<IWhatsNewService, WhatsNewService>();
@@ -57,11 +59,17 @@ public partial class App : Application
             _desktop = desktop;
             _viewModel = provider.GetRequiredService<MainWindowViewModel>();
             _mcpServer = provider.GetRequiredService<IMcpServerService>();
+            // Resolved now so it hears every settings save from the start.
+            var autoExporter = provider.GetRequiredService<SettingsAutoExporter>();
 
             // The app may outlive its window (tray), so it only ends on an explicit quit or a real close.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            // Off the UI thread: the stop resumes on its context, which this handler is blocking.
-            desktop.Exit += (_, _) => Task.Run(_mcpServer.StopAsync).Wait(TimeSpan.FromSeconds(3));
+            desktop.Exit += (_, _) =>
+            {
+                // Off the UI thread: the stop resumes on its context, which this handler is blocking.
+                Task.Run(_mcpServer.StopAsync).Wait(TimeSpan.FromSeconds(3));
+                autoExporter.Dispose(); // writes an export still waiting out its delay
+            };
 
             _window = new MainWindow { DataContext = _viewModel };
             _window.Closed += (_, _) => desktop.Shutdown();

@@ -43,6 +43,14 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   - `MsBuildPublishEngine` publishes classic (non-SDK) web projects via `DeployOnBuild` through their
     solution (`/t:<SolutionTargetName>`) — `/t:Publish` is ClickOnce there and silently skips them.
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**
+  - `Configuration/SettingsTransfer` exports/imports `AppSettings` (optionally AES-256-GCM, PBKDF2 key from a
+    password); machine-local fields (window, sign-in entry, MCP, auto-export) are left out and kept on restore
+    (`KeepLocal`). Saved passwords (`SecretKeys`: the profile/script/S3 keys the settings refer to, never the MCP
+    token or the export password) go only inside an *encrypted* export, and import drops any for other keys.
+    `SettingsAutoExporter` listens to `SettingsStore.Saved` and rewrites the user's export file (debounced, only
+    when the settings or saved passwords changed); its password lives in `ICredentialStore` under
+    `SettingsTransfer.AutoExportPasswordKey`. A restore writes the passwords to `ICredentialStore` and first saves
+    the current settings (no passwords) as `settings.before-restore.json` beside `settings.json`.
 - **`src/SolutionDeployer.App`** — Avalonia MVVM (CommunityToolkit.Mvvm). DI is wired in
   `App.axaml.cs`. `Services/UpdateService` wraps Velopack. `Program.cs` calls `VelopackApp.Build().Run()`
   first — keep it first.

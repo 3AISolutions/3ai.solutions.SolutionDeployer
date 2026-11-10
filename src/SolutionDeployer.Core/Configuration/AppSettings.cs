@@ -103,6 +103,12 @@ public sealed class AppSettings
     /// <summary>The localhost port the MCP server listens on.</summary>
     public int McpServerPort { get; set; } = 47821;
 
+    /// <summary>
+    /// Keep an export of these settings up to date in a file the user chose. When the export is encrypted its
+    /// key lives in the OS credential store, never here.
+    /// </summary>
+    public SettingsAutoExport AutoExport { get; set; } = new();
+
     // --- Last window placement (restored on startup). Null until first saved. ---
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }

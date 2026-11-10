@@ -246,6 +246,10 @@
                                     <Button Content="Manage backups…" HorizontalAlignment="Stretch"
                                             Command="{Binding ManageBackupsCommand}"
                                             ToolTip.Tip="See every snapshot, set how many to keep, and delete the ones no longer needed" />
+                                    <Separator Margin="0,2" />
+                                    <Button Content="Export / restore settings…" HorizontalAlignment="Stretch"
+                                            Command="{Binding ExportRestoreSettingsCommand}"
+                                            ToolTip.Tip="Export your sources, scripts and options to a file (optionally password-protected), keep that export up to date automatically, or restore from one" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>

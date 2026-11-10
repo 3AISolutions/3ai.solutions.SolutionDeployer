@@ -58,7 +58,7 @@ public sealed class ScriptRefreshTests : IDisposable
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
             new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
             new FakeUpdatePrompt(), whatsNew, new FakeDeploySummary(), new FakeBackupManager(),
-            new FakeAutoStart(), new FakeMcpServer());
+            new FakeAutoStart(), new FakeMcpServer(), new FakeSettingsBackup());
 
         return (vm, editor, whatsNew);
     }
@@ -226,6 +226,44 @@ public sealed class ScriptRefreshTests : IDisposable
         var (vm2, _, whatsNew2) = CreateViewModel();
         await vm2.RunStartupWhatsNewCheckAsync();
         Assert.Equal(0, whatsNew2.ShownCount);
+    }
+
+    [Fact]
+    public async Task Restoring_an_export_replaces_sources_and_options_but_keeps_local_settings()
+    {
+        // Export a setup with the solution and a script target from one "machine"…
+        var (source, editor, _) = CreateViewModel();
+        await source.OpenRecentCommand.ExecuteAsync(_solutionPath);
+        editor.Next = new ScriptTarget { Name = "Deploy", ScriptPath = "deploy.ps1" };
+        await source.AddScriptCommand.ExecuteAsync(source.Sources.Single().Projects.Single());
+        source.RunInParallel = true;
+        var exportPath = Path.Combine(_tempDir, "export.json");
+        SettingsTransfer.Export(new SettingsStore(_settingsPath).Load(), exportPath, "pw");
+
+        // …then start over with empty settings that have their own machine-local values.
+        File.Delete(_settingsPath);
+        var store = new SettingsStore(_settingsPath);
+        store.Save(new AppSettings { WindowWidth = 777, McpServerPort = 50123 });
+        var (vm, _, _) = CreateViewModel();
+        Assert.Empty(vm.Sources);
+
+        var import = SettingsTransfer.Import(exportPath, "pw");
+        var secrets = new Dictionary<string, string> { ["script:x"] = "pw" };
+        // No secure store in these tests, so passwords are skipped rather than kept somewhere unsafe.
+        Assert.Equal(0, await vm.ApplyRestoredSettingsAsync(import.Settings, secrets));
+
+        var project = vm.Sources.Single().Projects.Single();
+        Assert.Equal("Deploy", project.ScriptTargets.Single().Target.Name);
+        Assert.True(vm.RunInParallel);
+
+        var saved = store.Load();
+        Assert.Equal(777, saved.WindowWidth);
+        Assert.Equal(50123, saved.McpServerPort);
+        Assert.Single(saved.Sources);
+
+        // The replaced (empty) settings were kept as a restorable export.
+        var before = SettingsTransfer.Import(Path.Combine(_tempDir, MainWindowViewModel.BeforeRestoreFileName), null).Settings;
+        Assert.Empty(before.Sources);
     }
 
     public void Dispose()

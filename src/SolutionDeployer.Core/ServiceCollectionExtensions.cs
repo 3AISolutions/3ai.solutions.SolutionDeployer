@@ -45,6 +45,9 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());
+        services.AddSingleton(sp => new SettingsAutoExporter(
+            sp.GetRequiredService<SettingsStore>(),
+            sp.GetRequiredService<ICredentialStore>()));
 
         return services;
     }
