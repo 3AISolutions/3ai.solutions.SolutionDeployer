@@ -1070,11 +1070,22 @@ public sealed class BackupService(
     private static string RemoteTempPath() => $"/tmp/sd_{Guid.NewGuid().ToString("N")[..12]}";
 
     // BatchMode: authentication is the user's SSH key/agent; never wait on a password or host-key prompt.
+    // ConnectTimeout / ServerAlive*: an unreachable server or a connection that died mid-command fails within
+    // about a minute instead of leaving the backup (and the deploy behind it) waiting forever.
+    private static readonly string[] SshOptions =
+    [
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=30",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=4",
+    ];
+
     private async Task<int> RunSshAsync(string destination, string command, Action<OutputLine> onOutput, CancellationToken cancellationToken)
     {
         onOutput(OutputLine.Info($"$ ssh {destination} {command}"));
+        // -n: nothing is sent to the remote command; ssh doesn't wait on stdin to finish.
         var result = await processRunner
-            .RunAsync("ssh", ["-o", "BatchMode=yes", destination, command], workingDirectory: null, onOutput, cancellationToken: cancellationToken)
+            .RunAsync("ssh", ["-n", .. SshOptions, destination, command], workingDirectory: null, onOutput, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return result.ExitCode;
     }
@@ -1084,7 +1095,7 @@ public sealed class BackupService(
     {
         onOutput(OutputLine.Info($"$ scp {source} {destination}"));
         var result = await processRunner
-            .RunAsync("scp", ["-q", "-o", "BatchMode=yes", source, destination], work, onOutput, cancellationToken: cancellationToken)
+            .RunAsync("scp", ["-q", .. SshOptions, source, destination], work, onOutput, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"scp {source} → {destination} failed (exit code {result.ExitCode}).");
