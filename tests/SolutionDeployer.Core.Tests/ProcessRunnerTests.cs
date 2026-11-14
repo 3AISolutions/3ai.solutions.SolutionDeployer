@@ -14,16 +14,18 @@ public sealed class ProcessRunnerTests
     public async Task A_process_left_running_does_not_hold_the_run_open()
     {
         // The shell exits at once, but the background ping/sleep it started keeps the output pipes open.
-        var (fileName, args) = Shell("start /b ping -n 20 127.0.0.1 >nul & echo done", "sleep 20 & echo done");
-        var runner = new ProcessRunner(TimeSpan.FromSeconds(1));
+        // The drain window is generous enough for a slow CI runner to deliver "done", and well short of the 30 s
+        // the leftover process lives.
+        var (fileName, args) = Shell("start /b ping -n 30 127.0.0.1 >nul & echo done", "sleep 30 & echo done");
+        var runner = new ProcessRunner(TimeSpan.FromSeconds(4));
         var lines = new ConcurrentQueue<OutputLine>();
         var stopwatch = Stopwatch.StartNew();
 
         var result = await runner
             .RunAsync(fileName, args, workingDirectory: null, lines.Enqueue)
-            .WaitAsync(TimeSpan.FromSeconds(15));
+            .WaitAsync(TimeSpan.FromSeconds(20));
 
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(15));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(20));
         Assert.Equal(0, result.ExitCode);
         Assert.Contains(lines, l => l.Text.Trim() == "done");
         Assert.Contains(lines, l => l.Text.Contains("still holds its output open"));
