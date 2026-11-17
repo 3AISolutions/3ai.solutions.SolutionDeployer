@@ -156,6 +156,48 @@ public sealed class ScriptWhatIfTests : IDisposable
 
         var (service, job) = ScriptBackup("@exit /b 3\r\n");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.BackUpAsync(job, _ => { }));
+        await Assert.ThrowsAsync<ScriptWhatIfFailedException>(() => service.BackUpAsync(job, _ => { }));
+    }
+
+    // A real run leaves ran.txt behind; a -WhatIf run never does.
+    private const string RealRunMarker = "@if not \"%1\"==\"-WhatIf\" (echo ran> \"%~dp0ran.txt\" & exit /b 0)\r\n";
+
+    private Task<IReadOnlyList<PublishResult>> DeployWithBackupAsync(BackupService service, PublishJob job, List<OutputLine> output) =>
+        new DeploymentRunner(new PublishEngineFactory([new ScriptPublishEngine(new ProcessRunner())]), service).RunAsync(
+            [job], new DeploymentRunOptions { BackupBeforePublish = true }, o => { lock (output) output.Add(o.Line); }, _ => { });
+
+    [Fact]
+    public async Task Failed_WhatIf_run_fails_the_deploy_without_running_the_script_for_real()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // As when the build is broken: the dry run already fails.
+        var (service, job) = ScriptBackup(RealRunMarker + "@echo error BC30451: 'Foo' is not declared.\r\n@exit /b 1\r\n");
+        var output = new List<OutputLine>();
+
+        var result = (await DeployWithBackupAsync(service, job, output)).Single();
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Contains("not run for real", result.ErrorMessage);
+        Assert.False(File.Exists(Path.Combine(_dir, "ran.txt")));
+        Assert.DoesNotContain(output, l => l.Text.Contains("Proceeding with publish"));
+    }
+
+    [Fact]
+    public async Task WhatIf_report_that_cannot_be_read_still_lets_the_deploy_run()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // The dry run succeeds but reports no target: only the backup is lost, so the deploy goes ahead.
+        var (service, job) = ScriptBackup(RealRunMarker + "@echo nothing to report\r\n");
+        var output = new List<OutputLine>();
+
+        var result = (await DeployWithBackupAsync(service, job, output)).Single();
+
+        Assert.True(result.IsSuccess);
+        Assert.True(File.Exists(Path.Combine(_dir, "ran.txt")));
+        Assert.Contains(output, l => l.Text.Contains("Proceeding with publish"));
     }
 }

@@ -248,7 +248,8 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
 
     /// <summary>
     /// Best-effort backup before a publish. Skips scripts without a backup target and unsupported
-    /// profiles, and treats a backup failure as a logged warning rather than aborting the publish.
+    /// profiles, and treats a backup failure as a logged warning rather than aborting the publish — except a
+    /// script whose own <c>-WhatIf</c> run failed (<see cref="ScriptWhatIfFailedException"/>), which fails the job.
     /// Returns the backup's build when the publish can deploy it instead of building again.
     /// </summary>
     private async Task<PreparedDeployment?> TryBackupAsync(
@@ -288,6 +289,12 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (ScriptWhatIfFailedException ex)
+        {
+            // The dry run already failed (a broken build, say): the real run would only fail the same way, so the
+            // job fails here instead of building a second time.
+            throw new ScriptWhatIfFailedException($"{ex.Message} The script was not run for real.");
         }
         catch (Exception ex)
         {

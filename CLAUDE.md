@@ -29,7 +29,9 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     manifest; restore removes added paths and rolls back every newer snapshot first. Scripts get a full
     snapshot of their configured folder, or (`ScriptBackupKind.WhatIf`) are first run with `-WhatIf` and
     must print `SD-WHATIF-TARGET: <computerName>` + msdeploy change lines + `Total changes: N` per target
-    (`ScriptWhatIfReport`); targets reporting identical changes are saved once and restored to all. A target
+    (`ScriptWhatIfReport`); targets reporting identical changes are saved once and restored to all. Any other
+    backup failure only warns, but a `-WhatIf` run that exits non-zero (`ScriptWhatIfFailedException`) fails the
+    job without running the script for real. A target
     reported as `ssh://user@host` (absolute paths) is saved/restored with tar over `ssh`/`scp` instead of msdeploy.
   - Build once: that MSDeploy preview is kept as a `PreparedDeployment` and `DeploymentRunner` syncs it to the
     server (msdeploy, same content rules as the what-if) instead of publishing — i.e. building — again. Profiles

@@ -2,6 +2,12 @@ using System.Text.RegularExpressions;
 
 namespace SolutionDeployer.Core.Backup;
 
+/// <summary>
+/// The script's own <c>-WhatIf</c> run failed (non-zero exit code) — e.g. its build broke. Unlike a backup that
+/// merely couldn't be taken, this says the real run would fail the same way, so the deploy is not attempted.
+/// </summary>
+public sealed class ScriptWhatIfFailedException(string message) : InvalidOperationException(message);
+
 /// <summary>One Web Deploy endpoint a script deploys to, and what its <c>-WhatIf</c> run says would change there.</summary>
 public sealed record ScriptWhatIfTarget(string ComputerName, MsDeployChangeSet Changes);
 

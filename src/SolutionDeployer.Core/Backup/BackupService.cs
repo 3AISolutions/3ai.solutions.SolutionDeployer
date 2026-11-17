@@ -857,8 +857,10 @@ public sealed class BackupService(
 
         var result = await engineFactory!.Get(PublishEngineKind.Script).PublishAsync(whatIfJob, Collect, cancellationToken)
             .ConfigureAwait(false);
+        if (result.Status == PublishStatus.Cancelled)
+            throw new OperationCanceledException(cancellationToken);
         if (!result.IsSuccess)
-            throw new InvalidOperationException($"The script's -WhatIf run failed: {result.ErrorMessage ?? result.Status.ToString()}");
+            throw new ScriptWhatIfFailedException($"The script's -WhatIf run failed: {result.ErrorMessage ?? result.Status.ToString()}");
 
         IReadOnlyList<ScriptWhatIfTarget> targets;
         lock (lines)
