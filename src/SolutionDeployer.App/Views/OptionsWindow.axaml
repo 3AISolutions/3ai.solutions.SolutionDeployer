@@ -1,0 +1,168 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.OptionsWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Options"
+        Width="680" Height="520" MinWidth="560" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <!-- Bound to the main window's view model: every option applies (and is saved) as soon as it changes. -->
+
+    <Window.Styles>
+        <!-- Left-hand section list: compact, unlike Fluent's large tab headers -->
+        <Style Selector="TabControl.sections TabItem">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="StackPanel.page">
+            <Setter Property="Spacing" Value="10" />
+            <Setter Property="Margin" Value="20,4,8,8" />
+        </Style>
+        <!-- An option and the hint under it -->
+        <Style Selector="StackPanel.option">
+            <Setter Property="Spacing" Value="2" />
+        </Style>
+        <Style Selector="StackPanel.option > TextBlock.hint">
+            <Setter Property="Margin" Value="28,0,0,0" />
+        </Style>
+        <Style Selector="StackPanel.option.nested">
+            <Setter Property="Margin" Value="28,0,0,0" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="16">
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="Changes apply right away." Classes="hint"
+                           VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Classes="buttons">
+                    <Button Content="Close" Click="OnCloseClick" IsDefault="True" IsCancel="True" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TabControl Classes="sections" TabStripPlacement="Left">
+
+            <TabItem Header="Deploying">
+                <ScrollViewer>
+                    <StackPanel Classes="page">
+                        <TextBlock Text="Deploying" Classes="heading" />
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" />
+                            <TextBlock Classes="hint"
+                                       Text="Deploy unrelated targets at the same time. Targets whose builds share a project still run one after another." />
+                        </StackPanel>
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}" />
+                            <TextBlock Classes="hint"
+                                       Text="Snapshot the current deployment (Web Deploy / file system) before each publish, so it can be restored later." />
+                        </StackPanel>
+                        <StackPanel Classes="option nested" IsEnabled="{Binding BackupBeforePublish}">
+                            <CheckBox Content="Build once when backing up" IsChecked="{Binding DeployBackupPreview}" />
+                            <TextBlock Classes="hint"
+                                       Text="A Web Deploy backup already builds the publish to find what it changes. Deploy that build directly instead of building the project a second time. Profiles that use Web Deploy parameters, skip rules or database publishing still publish through MSBuild." />
+                        </StackPanel>
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}" />
+                            <TextBlock Classes="hint" Text="Show a confirmation listing the targets before a deploy runs." />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Startup">
+                <ScrollViewer>
+                    <StackPanel Classes="page">
+                        <TextBlock Text="Startup" Classes="heading" />
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}" />
+                            <TextBlock Classes="hint" Text="Reload the added solutions and projects, and their selections, when the app starts." />
+                        </StackPanel>
+                        <StackPanel Classes="option">
+                            <CheckBox Content="{Binding AutoStartLabel}" IsChecked="{Binding StartWithOperatingSystem}"
+                                      IsEnabled="{Binding AutoStartSupported}" />
+                            <TextBlock Classes="hint"
+                                       Text="Start the app when you sign in. It starts in the tray when closing the window keeps it running there." />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Window">
+                <ScrollViewer>
+                    <StackPanel Classes="page">
+                        <TextBlock Text="When closing the window" Classes="heading" />
+                        <StackPanel Classes="option">
+                            <RadioButton GroupName="close" Content="Keep running in the tray" IsChecked="{Binding CloseToTray}" />
+                            <TextBlock Classes="hint"
+                                       Text="The app keeps running (and serving Claude) with an icon in the tray. Quit from the tray icon's menu or File › Exit." />
+                        </StackPanel>
+                        <StackPanel Classes="option">
+                            <RadioButton GroupName="close" Content="Quit the application" IsChecked="{Binding !CloseToTray}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Claude (MCP)">
+                <ScrollViewer>
+                    <StackPanel Classes="page">
+                        <TextBlock Text="Claude (MCP)" Classes="heading" />
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Let Claude deploy through this app" IsChecked="{Binding McpServerEnabled}" />
+                            <TextBlock Classes="hint"
+                                       Text="Serves an MCP server on this computer only (localhost) that lists targets, deploys, follows runs and restores snapshots. Requests need the access token, and passwords never leave the app." />
+                        </StackPanel>
+                        <StackPanel Spacing="10" IsVisible="{Binding McpServerEnabled}">
+                            <Border Classes="card" Padding="10,8">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Grid.Column="0" Text="Status" Classes="label" VerticalAlignment="Top" />
+                                    <TextBlock Grid.Column="1" Text="{Binding McpStatus}" TextWrapping="Wrap" FontSize="12" />
+                                </Grid>
+                            </Border>
+                            <StackPanel Classes="option">
+                                <Button Content="Copy Claude Code command" Click="OnCopyClaudeCodeCommandClick" MinWidth="230" />
+                                <TextBlock Classes="hint" Margin="0"
+                                           Text="A 'claude mcp add' command that connects Claude Code to this app. It includes the access token." />
+                            </StackPanel>
+                            <StackPanel Classes="option">
+                                <Button Content="Copy Claude Desktop config" Click="OnCopyClaudeDesktopConfigClick" MinWidth="230" />
+                                <TextBlock Classes="hint" Margin="0"
+                                           Text="An mcpServers entry for claude_desktop_config.json (bridged with mcp-remote; needs Node.js)." />
+                            </StackPanel>
+                            <StackPanel Classes="option">
+                                <Button Content="New access token" Command="{Binding RegenerateMcpTokenCommand}" MinWidth="230" />
+                                <TextBlock Classes="hint" Margin="0"
+                                           Text="Replace the token: clients set up with the old one must be reconnected." />
+                            </StackPanel>
+                            <TextBlock Name="CopyFeedback" Classes="hint" FontWeight="SemiBold" IsVisible="False" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Backups">
+                <ScrollViewer>
+                    <StackPanel Classes="page">
+                        <TextBlock Text="Backups" Classes="heading" />
+                        <StackPanel Classes="option">
+                            <Button Content="Backup destinations…" Click="OnBackupDestinationsClick" MinWidth="230" />
+                            <TextBlock Classes="hint" Margin="0"
+                                       Text="Configure S3-compatible remotes for storing snapshots." />
+                        </StackPanel>
+                        <StackPanel Classes="option">
+                            <Button Content="Manage backups…" Click="OnManageBackupsClick" MinWidth="230"
+                                    IsEnabled="{Binding !IsRunning}" />
+                            <TextBlock Classes="hint" Margin="0"
+                                       Text="See every snapshot, set how many to keep, and delete the ones no longer needed. Not available while a deploy runs." />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

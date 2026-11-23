@@ -60,6 +60,12 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   explicit; quit from the tray), `StartWithOperatingSystem` registers a sign-in entry (`AutoStartService`: Run key /
   XDG autostart / LaunchAgent) that launches with `--background`, and `SingleInstance` (mutex + named pipe) makes a
   second launch show the running copy's window instead.
+  The main window's top is a menu bar (File/Deploy/Tools/Help; shortcuts are `Window.KeyBindings`, `InputGesture`
+  only displays them) over a slim icon toolbar. Icons are `StreamGeometry` resources in `App.axaml` drawn by
+  `PathIcon`, so they take the theme's foreground — no icon package. `OptionsWindow` binds straight to
+  `MainWindowViewModel` (options save as they change) and returns an `OptionsFollowUp` so the backup windows,
+  which the main window owns, open after it closes. File › Exit calls `Shutdown()` like the tray's Quit, so it quits
+  even with close-to-tray.
 - **`src/SolutionDeployer.Mcp`** — MCP server (official `ModelContextProtocol.AspNetCore` SDK, Kestrel in-process) on
   `http://localhost:47821/mcp`, loopback only, `Authorization: Bearer` token required (token kept in
   `ICredentialStore`, never settings). `DeployerTools` call `IDeployerHost`, which the app implements in

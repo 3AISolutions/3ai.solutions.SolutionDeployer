@@ -176,94 +176,113 @@
         </DataTemplate>
     </Window.Resources>
 
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding AddSolutionCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+O" Command="{Binding AddProjectCommand}" />
+        <KeyBinding Gesture="F5" Command="{Binding RefreshAllCommand}" />
+        <KeyBinding Gesture="Ctrl+Enter" Command="{Binding DeployCommand}" />
+    </Window.KeyBindings>
+
     <DockPanel>
-        <!-- Single toolbar: sources on the left, deploy + app menus on the right -->
-        <Border DockPanel.Dock="Top" Classes="bar">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                    <Button Content="Add Solution…" Command="{Binding AddSolutionCommand}" />
-                    <Button Content="Add Project…" Command="{Binding AddProjectCommand}" />
-                    <ComboBox Name="RecentCombo" ItemsSource="{Binding RecentSolutions}"
-                              PlaceholderText="Recent…" MinWidth="130" VerticalAlignment="Center"
-                              SelectionChanged="OnRecentSelectionChanged" />
-                    <Button Content="↻" Command="{Binding RefreshAllCommand}" MinWidth="36"
-                            HorizontalContentAlignment="Center"
-                            ToolTip.Tip="Refresh: re-read all added sources from disk" />
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7">
-                        <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
-                    </TextBlock>
-                    <Button Content="Deploy Selected" Command="{Binding DeployCommand}"
-                            Classes="accent" IsEnabled="{Binding !IsRunning}" />
-                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
-                    <Border Width="1" Background="#33808080" Margin="4,4" />
-                    <Button Content="Options ▾" ToolTip.Tip="Deploy and startup options">
-                        <Button.Flyout>
-                            <Flyout Placement="BottomEdgeAlignedRight">
-                                <StackPanel x:DataType="vm:MainWindowViewModel" Spacing="8" MinWidth="240" Margin="4">
-                                    <TextBlock Text="WHEN DEPLOYING" Classes="caption" />
-                                    <CheckBox Content="Run in parallel" IsChecked="{Binding RunInParallel}" />
-                                    <CheckBox Content="Back up before publishing" IsChecked="{Binding BackupBeforePublish}"
-                                              ToolTip.Tip="Snapshot the current deployment (MSDeploy / FileSystem) before each publish, so it can be restored later" />
-                                    <CheckBox Content="Build once when backing up" IsChecked="{Binding DeployBackupPreview}"
-                                              IsEnabled="{Binding BackupBeforePublish}" Margin="20,0,0,0"
-                                              ToolTip.Tip="A Web Deploy backup already builds the publish to find what it changes. Deploy that build directly instead of building the project a second time (profiles that use Web Deploy parameters, skip rules or database publishing still publish through MSBuild)" />
-                                    <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}"
-                                              ToolTip.Tip="Show a confirmation listing the targets before a deploy runs" />
-                                    <Separator Margin="0,2" />
-                                    <TextBlock Text="ON STARTUP" Classes="caption" />
-                                    <CheckBox Content="Restore sources on startup" IsChecked="{Binding RestoreSourcesOnStartup}"
-                                              ToolTip.Tip="Reload the added solutions/projects and their selections on startup" />
-                                    <CheckBox Content="{Binding AutoStartLabel}" IsChecked="{Binding StartWithOperatingSystem}"
-                                              IsEnabled="{Binding AutoStartSupported}"
-                                              ToolTip.Tip="Start the app when you sign in. It starts in the tray when closing keeps it running there" />
-                                    <Separator Margin="0,2" />
-                                    <TextBlock Text="WHEN CLOSING THE WINDOW" Classes="caption" />
-                                    <RadioButton GroupName="close" Content="Keep running in the tray" IsChecked="{Binding CloseToTray}"
-                                                 ToolTip.Tip="The app keeps running (and serving Claude) with an icon in the tray. Quit from the tray icon's menu" />
-                                    <RadioButton GroupName="close" Content="Quit the application" IsChecked="{Binding !CloseToTray}" />
-                                    <Separator Margin="0,2" />
-                                    <TextBlock Text="CLAUDE (MCP)" Classes="caption" />
-                                    <CheckBox Content="Let Claude deploy through this app" IsChecked="{Binding McpServerEnabled}"
-                                              ToolTip.Tip="Serves an MCP server on this computer only (localhost) that lists targets, deploys, follows runs and restores snapshots. Requests need the access token" />
-                                    <TextBlock Text="{Binding McpStatus}" Classes="hint" MaxWidth="260" IsVisible="{Binding McpServerEnabled}" />
-                                    <StackPanel Spacing="6" IsVisible="{Binding McpServerEnabled}">
-                                        <Button Content="Copy Claude Code command" HorizontalAlignment="Stretch"
-                                                Click="OnCopyClaudeCodeCommandClick"
-                                                ToolTip.Tip="A 'claude mcp add' command that connects Claude Code to this app (includes the access token)" />
-                                        <Button Content="Copy Claude Desktop config" HorizontalAlignment="Stretch"
-                                                Click="OnCopyClaudeDesktopConfigClick"
-                                                ToolTip.Tip="An mcpServers entry for claude_desktop_config.json (bridged with mcp-remote; needs Node.js)" />
-                                        <Button Content="New access token" HorizontalAlignment="Stretch"
-                                                Command="{Binding RegenerateMcpTokenCommand}"
-                                                ToolTip.Tip="Replace the token: clients set up with the old one must be reconnected" />
-                                    </StackPanel>
-                                    <Separator Margin="0,2" />
-                                    <Button Content="Backup destinations…" HorizontalAlignment="Stretch"
-                                            Command="{Binding ManageBackupTargetsCommand}"
-                                            ToolTip.Tip="Configure S3-compatible remotes for storing snapshots" />
-                                    <Button Content="Manage backups…" HorizontalAlignment="Stretch"
-                                            Command="{Binding ManageBackupsCommand}"
-                                            ToolTip.Tip="See every snapshot, set how many to keep, and delete the ones no longer needed" />
-                                    <Separator Margin="0,2" />
-                                    <Button Content="Export / restore settings…" HorizontalAlignment="Stretch"
-                                            Command="{Binding ExportRestoreSettingsCommand}"
-                                            ToolTip.Tip="Export your sources, scripts and options to a file (optionally password-protected), keep that export up to date automatically, or restore from one" />
-                                </StackPanel>
-                            </Flyout>
-                        </Button.Flyout>
+        <!-- Top: a classic menu bar over a slim icon toolbar -->
+        <Border DockPanel.Dock="Top" Classes="topbar">
+            <StackPanel>
+                <Menu>
+                    <MenuItem Header="_File">
+                        <MenuItem Header="Add _Solution…" Command="{Binding AddSolutionCommand}" InputGesture="Ctrl+O">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconAddSolution}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Add _Project…" Command="{Binding AddProjectCommand}" InputGesture="Ctrl+Shift+O">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconAddProject}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <!-- Items are the recent paths; a click on one bubbles up to OnRecentMenuClick -->
+                        <MenuItem Header="_Recent" ItemsSource="{Binding RecentSolutions}"
+                                  IsEnabled="{Binding !!RecentSolutions.Count}" Click="OnRecentMenuClick">
+                            <MenuItem.ItemTemplate>
+                                <!-- A TextBlock, so underscores in paths aren't taken as access keys; long paths
+                                     lose middle folders, keeping the file name -->
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Text="{Binding}" MaxWidth="440" TextTrimming="PathSegmentEllipsis"
+                                               ToolTip.Tip="{Binding}" />
+                                </DataTemplate>
+                            </MenuItem.ItemTemplate>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="_Refresh" Command="{Binding RefreshAllCommand}" InputGesture="F5">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconRefresh}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="_Export / restore settings…" Command="{Binding ExportRestoreSettingsCommand}" />
+                        <Separator />
+                        <MenuItem Header="E_xit" Click="OnExitClick" />
+                    </MenuItem>
+                    <MenuItem Header="_Deploy">
+                        <MenuItem Header="_Deploy Selected" Command="{Binding DeployCommand}" InputGesture="Ctrl+Enter">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconDeploy}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="_Cancel" Command="{Binding CancelCommand}">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconStop}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="Select _All" Command="{Binding SelectAllCommand}" />
+                        <MenuItem Header="C_lear Selection" Command="{Binding ClearSelectionCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="_Tools">
+                        <MenuItem Header="_Options…" Click="OnOptionsClick" InputGesture="Ctrl+OemComma">
+                            <MenuItem.Icon><PathIcon Data="{StaticResource IconSettings}" /></MenuItem.Icon>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="Backup _destinations…" Command="{Binding ManageBackupTargetsCommand}" />
+                        <MenuItem Header="_Manage backups…" Command="{Binding ManageBackupsCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="_Help">
+                        <MenuItem Header="_What's New" Command="{Binding ShowWhatsNewCommand}" />
+                        <MenuItem Header="Check for _Updates" Command="{Binding CheckForUpdatesCommand}" />
+                    </MenuItem>
+                </Menu>
+
+                <Grid Classes="toolbar" ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
+                        <Button Classes="tool" Command="{Binding AddSolutionCommand}"
+                                ToolTip.Tip="Add a solution (Ctrl+O)">
+                            <StackPanel>
+                                <PathIcon Data="{StaticResource IconAddSolution}" />
+                                <TextBlock Text="Solution" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="tool" Command="{Binding AddProjectCommand}"
+                                ToolTip.Tip="Add a standalone project (Ctrl+Shift+O)">
+                            <StackPanel>
+                                <PathIcon Data="{StaticResource IconAddProject}" />
+                                <TextBlock Text="Project" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="tool" Command="{Binding RefreshAllCommand}"
+                                ToolTip.Tip="Refresh: re-read all added sources from disk (F5)">
+                            <PathIcon Data="{StaticResource IconRefresh}" />
+                        </Button>
+                        <Border Classes="toolSeparator" />
+                        <Button Classes="tool accent" Command="{Binding DeployCommand}"
+                                ToolTip.Tip="Deploy the ticked targets (Ctrl+Enter)">
+                            <StackPanel>
+                                <PathIcon Data="{StaticResource IconDeploy}" />
+                                <TextBlock Text="Deploy Selected" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="tool" Command="{Binding CancelCommand}"
+                                ToolTip.Tip="Cancel the running deploy">
+                            <PathIcon Data="{StaticResource IconStop}" />
+                        </Button>
+                        <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Opacity="0.7">
+                            <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
+                        </TextBlock>
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="tool" Click="OnOptionsClick" HotKey="Ctrl+OemComma"
+                            ToolTip.Tip="Options (Ctrl+,)">
+                        <PathIcon Data="{StaticResource IconSettings}" />
                     </Button>
-                    <Button Content="Help ▾" ToolTip.Tip="Release notes and updates">
-                        <Button.Flyout>
-                            <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                <MenuItem Header="What's New" Command="{Binding ShowWhatsNewCommand}" />
-                                <MenuItem Header="Check for Updates" Command="{Binding CheckForUpdatesCommand}" />
-                            </MenuFlyout>
-                        </Button.Flyout>
-                    </Button>
-                </StackPanel>
-            </Grid>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <!-- Status bar -->
