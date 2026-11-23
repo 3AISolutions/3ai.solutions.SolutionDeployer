@@ -25,6 +25,28 @@ public abstract partial class BackupHostViewModel : ObservableObject
     /// <summary>The row's current credentials, reused for a restore.</summary>
     public abstract PublishCredentials BuildCredentials();
 
+    /// <summary>The target's last successful deploy, by anyone sharing its backup destination; null when none is recorded.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLastDeployment))]
+    [NotifyPropertyChangedFor(nameof(LastDeploymentText))]
+    [NotifyPropertyChangedFor(nameof(LastDeploymentTip))]
+    private LastDeployment? _lastDeployment;
+
+    public bool HasLastDeployment => LastDeployment is not null;
+
+    /// <summary>Compact, for the row: e.g. "2 h ago · andre".</summary>
+    public string LastDeploymentText => LastDeployment is { } d
+        ? $"{RelativeTime.Describe(d.DeployedUtc, DateTimeOffset.UtcNow)} · {d.User}"
+        : string.Empty;
+
+    public string LastDeploymentTip => LastDeployment is { } d
+        ? $"Last deployed {d.DeployedUtc.ToLocalTime():yyyy-MM-dd HH:mm} by {d.By}"
+        : string.Empty;
+
+    /// <summary>The output shows only this row's lines (the user clicked the row).</summary>
+    [ObservableProperty]
+    private bool _isOutputFocused;
+
     /// <summary>Whether this target's deployment can be snapshotted/restored.</summary>
     [ObservableProperty]
     private bool _supportsBackup;

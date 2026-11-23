@@ -16,7 +16,8 @@ public sealed class DeployerTools(IDeployerHost host, RunRegistry runs)
                  "and deployment scripts. Use a target's id with deploy, list_backups and get_release_summary. " +
                  "credentialsReady=false means the target needs a password that is not saved in the app (its own, or a saved credential from the app's library); save it there first. " +
                  "Each target lists the tags the user gave it in the app (e.g. prod, staging, eu); pass tags to list only " +
-                 "targets that have all of them.")]
+                 "targets that have all of them. lastDeployedUtc / lastDeployedBy say when and by whom (user on machine) a target " +
+                 "was last deployed successfully, by anyone sharing its backup destination.")]
     public async Task<DeployerSnapshot> ListTargets(
         [Description("Optional text to match against source, project, target or destination names.")] string? filter = null,
         [Description("Optional tags (case-insensitive): only targets that have every one of them are listed. " +

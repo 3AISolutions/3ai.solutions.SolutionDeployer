@@ -97,6 +97,7 @@ public partial class MainWindowViewModel : ObservableObject
         _backupBeforePublish = _settings.BackupBeforePublish;
         _deployBackupPreview = _settings.DeployBackupPreview;
         _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
+        _showSummaryAfterDeploy = _settings.ShowSummaryAfterDeploy;
         _updateRepository = _settings.UpdateRepository;
         _restoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
         _closeToTray = _settings.CloseToTray;
@@ -110,7 +111,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<SourceViewModel> Sources { get; } = [];
 
-    public ObservableCollection<LogLine> Log { get; } = [];
+    /// <summary>Every output line (capped); the console shows <see cref="VisibleLog"/>.</summary>
+    public ObservableCollection<LogLine> Log => _output.All;
 
     public ObservableCollection<string> RecentSolutions { get; } = [];
 
@@ -139,6 +141,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _confirmBeforeDeploy;
+
+    /// <summary>Open the deploy summary window when a deploy started from the window finishes.</summary>
+    [ObservableProperty]
+    private bool _showSummaryAfterDeploy;
 
     [ObservableProperty]
     private bool _restoreSourcesOnStartup;
@@ -192,6 +198,12 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnConfirmBeforeDeployChanged(bool value)
     {
         _settings.ConfirmBeforeDeploy = value;
+        _settingsStore.Save(_settings);
+    }
+
+    partial void OnShowSummaryAfterDeployChanged(bool value)
+    {
+        _settings.ShowSummaryAfterDeploy = value;
         _settingsStore.Save(_settings);
     }
 
@@ -857,7 +869,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (FindUnavailableEngine(selectedProfiles, selectedScripts) is { } engineError)
         {
             StatusMessage = engineError;
-            Log.Add(LogLine.System($"ERROR: {StatusMessage}"));
+            AppendLog(LogLine.System($"ERROR: {StatusMessage}"));
             return;
         }
 
@@ -887,7 +899,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var summary = await RunDeploymentAsync(selectedProfiles, selectedScripts, RunInParallel, BackupBeforePublish, observer: null);
-        if (summary is not null)
+        if (summary is not null && ShowSummaryAfterDeploy)
             await _deploySummary.ShowAsync(summary);
     }
 
@@ -965,8 +977,18 @@ public partial class MainWindowViewModel : ObservableObject
         var startedJobs = new HashSet<string>();
         DeploySummaryViewModel? summary = null;
         var outcome = PublishStatus.Failed;
+
+        // A new deploy starts with an empty output. Keep showing one target's output only if it is deploying again.
+        ClearLog();
+        if (OutputTarget is not null && !queued.Contains(OutputTarget))
+            OutputTarget = null;
+
+        // Colours follow the queue order, so they don't depend on which target happens to write first.
+        foreach (var job in jobs)
+            _output.BrushFor(jobsByTarget[job.Id]);
+
         var heading = $"── Deploying {jobs.Count} target(s) ({(runInParallel ? "parallel" : "sequential")}) ──";
-        Log.Add(LogLine.System(heading));
+        AppendLog(LogLine.System(heading));
         observer?.Output(heading);
         StatusMessage = $"Deploying {jobs.Count} target(s)…";
 
@@ -975,13 +997,20 @@ public partial class MainWindowViewModel : ObservableObject
             observer?.Output($"[{output.JobDisplayName}] {output.Line.Text}");
             Dispatcher.UIThread.Post(() =>
             {
-                if (startedJobs.Add(output.JobId) && jobsByTarget.TryGetValue(output.JobId, out var vmStart))
+                if (!jobsByTarget.TryGetValue(output.JobId, out var target))
                 {
-                    ((ISelectableTarget)vmStart).Status = PublishStatus.Running;
-                    observer?.TargetChanged(vmStart, PublishStatus.Running, null);
+                    AppendLog(new LogLine($"[{output.JobDisplayName}] {output.Line.Text}", output.Line.Severity == OutputSeverity.Error));
+                    return;
                 }
 
-                AppendLog(LogLine.From(output.JobDisplayName, output.Line));
+                if (startedJobs.Add(output.JobId))
+                {
+                    ((ISelectableTarget)target).Status = PublishStatus.Running;
+                    observer?.TargetChanged(target, PublishStatus.Running, null);
+                    AppendLog(TargetLine(target, "── Started ──"));
+                }
+
+                AppendLog(TargetLine(target, output.Line.Text, output.Line.Severity == OutputSeverity.Error));
             });
         }
 
@@ -994,6 +1023,9 @@ public partial class MainWindowViewModel : ObservableObject
                 row.ResultText = result.IsSuccess
                     ? $"OK ({StepTimings.Format(result.Duration)})"
                     : result.ErrorMessage ?? result.Status.ToString();
+                AppendLog(TargetLine(vm,
+                    $"── {(result.IsSuccess ? "Succeeded" : result.Status.ToString())}: {row.ResultText} ──",
+                    isError: !result.IsSuccess));
                 observer?.TargetChanged(vm, result.Status, result.IsSuccess ? result.TimingText : row.ResultText);
             }
         });
@@ -1018,12 +1050,17 @@ public partial class MainWindowViewModel : ObservableObject
             StatusMessage = failed == 0
                 ? $"All {ok} target(s) succeeded in {runTime}."
                 : $"{ok} succeeded, {failed} failed ({runTime}).";
-            Log.Add(LogLine.System($"── {StatusMessage} ──"));
+            AppendLog(LogLine.System($"── {StatusMessage} ──"));
 
-            // A backup taken during the run produces a new snapshot — refresh the restore lists.
-            if (backupBeforePublish)
-                foreach (var host in queued)
+            // A deploy is recorded in the backup destination, and a backup taken during the run produces a new
+            // snapshot: refresh both.
+            foreach (var host in queued)
+            {
+                if (backupBeforePublish)
                     _ = LoadBackupsAsync(host);
+                else
+                    _ = LoadLastDeploymentAsync(host);
+            }
 
             // Record/log the git history for profiles that deployed successfully (informative only).
             var succeeded = results
@@ -1036,12 +1073,12 @@ public partial class MainWindowViewModel : ObservableObject
         {
             outcome = PublishStatus.Cancelled;
             StatusMessage = "Deployment cancelled.";
-            Log.Add(LogLine.System("── Cancelled ──"));
+            AppendLog(LogLine.System("── Cancelled ──"));
         }
         catch (Exception ex)
         {
             StatusMessage = $"Deployment error: {ex.Message}";
-            Log.Add(LogLine.System($"ERROR: {ex.Message}"));
+            AppendLog(LogLine.System($"ERROR: {ex.Message}"));
         }
         finally
         {
@@ -1100,6 +1137,9 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private async Task LoadBackupsAsync(BackupHostViewModel host)
     {
+        // Recorded whether or not the target can be backed up, so it is read for every row.
+        _ = LoadLastDeploymentAsync(host);
+
         if (!host.SupportsBackup)
             return;
 
@@ -1119,6 +1159,19 @@ public partial class MainWindowViewModel : ObservableObject
             host.BackupsError = $"Could not list snapshots: {ex.Message}";
             host.SetBackups([]);
             StatusMessage = $"Could not list snapshots for {host.Name}: {ex.Message}";
+        }
+    }
+
+    /// <summary>Reads when (and by whom) the row's target was last deployed, from its backup destination. Best-effort.</summary>
+    private async Task LoadLastDeploymentAsync(BackupHostViewModel host)
+    {
+        try
+        {
+            host.LastDeployment = await _backupService.GetLastDeploymentAsync(host.BackupOwner);
+        }
+        catch
+        {
+            // Informative only; an unreachable destination already shows up in the snapshot listing.
         }
     }
 
@@ -1278,6 +1331,7 @@ public partial class MainWindowViewModel : ObservableObject
         BackupBeforePublish = _settings.BackupBeforePublish;
         DeployBackupPreview = _settings.DeployBackupPreview;
         ConfirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
+        ShowSummaryAfterDeploy = _settings.ShowSummaryAfterDeploy;
         RestoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
         ShowPaths = _settings.ShowPaths;
         CloseToTray = _settings.CloseToTray;
@@ -1309,7 +1363,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsRunning = true;
         _runCts = new CancellationTokenSource();
         var heading = $"── Restoring {host.Name} from {backup.DisplayName} ──";
-        Log.Add(LogLine.System(heading));
+        AppendLog(LogLine.System(heading));
         observer?.Output(heading);
         observer?.TargetChanged(host, PublishStatus.Running, null);
         StatusMessage = $"Restoring {host.Name}…";
@@ -1318,7 +1372,7 @@ public partial class MainWindowViewModel : ObservableObject
         void Sink(OutputLine line)
         {
             observer?.Output($"[{host.Name}] {line.Text}");
-            Dispatcher.UIThread.Post(() => AppendLog(LogLine.From(host.Name, line)));
+            Dispatcher.UIThread.Post(() => AppendLog(TargetLine(host, line.Text, line.Severity == OutputSeverity.Error)));
         }
 
         try
@@ -1333,18 +1387,18 @@ public partial class MainWindowViewModel : ObservableObject
 
             outcome = PublishStatus.Succeeded;
             StatusMessage = $"Restored {host.Name}.";
-            Log.Add(LogLine.System($"── Restored {host.Name} ──"));
+            AppendLog(LogLine.System($"── Restored {host.Name} ──"));
         }
         catch (OperationCanceledException)
         {
             outcome = PublishStatus.Cancelled;
             StatusMessage = "Restore cancelled.";
-            Log.Add(LogLine.System("── Restore cancelled ──"));
+            AppendLog(LogLine.System("── Restore cancelled ──"));
         }
         catch (Exception ex)
         {
             StatusMessage = $"Restore failed: {ex.Message}";
-            Log.Add(LogLine.System($"ERROR: {ex.Message}"));
+            AppendLog(LogLine.System($"ERROR: {ex.Message}"));
         }
         finally
         {
@@ -1468,7 +1522,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (await _backupService.DeleteAsync(entry.Backup))
         {
             foreach (var deleted in deletionSet)
-                Log.Add(LogLine.System($"Deleted snapshot {deleted.DisplayName} for {host.Name}."));
+                AppendLog(LogLine.System($"Deleted snapshot {deleted.DisplayName} for {host.Name}."));
             StatusMessage = deletionSet.Count == 1
                 ? $"Deleted snapshot for {host.Name}."
                 : $"Deleted {deletionSet.Count} snapshots for {host.Name}.";
@@ -1533,7 +1587,7 @@ public partial class MainWindowViewModel : ObservableObject
                     profileVm.Parent.Project.ProjectPath, profileVm.Parent.Name, previous);
 
                 foreach (var line in summary.ToPlainText().Split('\n'))
-                    AppendLog(LogLine.From(profileVm.Name, OutputLine.Info(line.TrimEnd('\r'))));
+                    AppendLog(TargetLine(profileVm, line.TrimEnd('\r')));
 
                 var current = summary.Projects
                     .Where(p => p.CurrentSha is not null)
@@ -1550,15 +1604,46 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
-    [RelayCommand]
-    private void ClearLog() => Log.Clear();
+    // ---- Output console ----------------------------------------------------
 
-    private void AppendLog(LogLine line)
+    private readonly OutputLog _output = new(MaxLogLines);
+
+    /// <summary>What the output shows: all of <see cref="Log"/>, or only <see cref="OutputTarget"/>'s lines.</summary>
+    public ObservableCollection<LogLine> VisibleLog => _output.Visible;
+
+    /// <summary>The row whose output alone is shown (the user clicked it); null shows every line.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOutputFiltered))]
+    [NotifyPropertyChangedFor(nameof(OutputTitle))]
+    private BackupHostViewModel? _outputTarget;
+
+    public bool IsOutputFiltered => OutputTarget is not null;
+
+    public string OutputTitle => OutputTarget is null ? "Output" : $"Output: {LogLine.NameOf(OutputTarget)}";
+
+    partial void OnOutputTargetChanged(BackupHostViewModel? oldValue, BackupHostViewModel? newValue)
     {
-        Log.Add(line);
-        if (Log.Count > MaxLogLines)
-            Log.RemoveAt(0);
+        if (oldValue is not null)
+            oldValue.IsOutputFocused = false;
+        if (newValue is not null)
+            newValue.IsOutputFocused = true;
+        _output.Target = newValue;
     }
+
+    /// <summary>Clicking a row shows only its output; clicking it again shows everything.</summary>
+    public void ToggleOutputTarget(BackupHostViewModel target) =>
+        OutputTarget = ReferenceEquals(OutputTarget, target) ? null : target;
+
+    [RelayCommand]
+    private void ShowAllOutput() => OutputTarget = null;
+
+    [RelayCommand]
+    private void ClearLog() => _output.Clear();
+
+    private LogLine TargetLine(BackupHostViewModel target, string text, bool isError = false) =>
+        _output.Line(target, text, isError);
+
+    private void AppendLog(LogLine line) => _output.Append(line);
 
     // ---- Credentials ------------------------------------------------------
 

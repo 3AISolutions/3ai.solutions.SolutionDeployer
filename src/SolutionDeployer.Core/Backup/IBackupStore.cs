@@ -33,4 +33,10 @@ public interface IBackupStore
 
     /// <summary>Removes a snapshot's package and manifest.</summary>
     Task DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default);
+
+    /// <summary>The owner's last successful deploy, by anyone sharing this destination; null when none is recorded.</summary>
+    Task<LastDeployment?> GetLastDeploymentAsync(string profileKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Records a successful deploy of the owner (replacing the previous record).</summary>
+    Task SaveLastDeploymentAsync(string profileKey, LastDeployment deployment, CancellationToken cancellationToken = default);
 }

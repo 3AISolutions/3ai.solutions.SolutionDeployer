@@ -54,7 +54,7 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
             var backups = await viewModel.ListBackupsAsync(host);
             return (IReadOnlyList<BackupInfo>)backups
                 .Select(b => new BackupInfo(
-                    b.Id, b.Sequence, b.CreatedUtc, b.Kind.ToString(), b.IsPartial, b.DisplayName, b.Target))
+                    b.Id, b.Sequence, b.CreatedUtc, b.Kind.ToString(), b.IsPartial, b.DisplayName, b.Target, b.CreatedBy))
                 .ToList();
         });
 
@@ -95,7 +95,8 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
                 IdOf(profile), "profile", profile.Name, project.Name,
                 profile.Profile.WebPublishMethod, profile.EngineLabel, NullIfEmpty(profile.Target),
                 profile.RequiresCredentials, profile.CredentialsReady,
-                profile.SupportsBackup, null, LastStatus(profile), NullIfEmpty(profile.ResultText), profile.Tags.ToList());
+                profile.SupportsBackup, null, LastStatus(profile), NullIfEmpty(profile.ResultText), profile.Tags.ToList(),
+                profile.LastDeployment?.DeployedUtc, profile.LastDeployment?.By);
         }
 
         foreach (var script in project.ScriptTargets)
@@ -104,7 +105,8 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
                 IdOf(script), "script", script.Name, project.Name,
                 "Script", null, script.Summary,
                 script.RequiresCredentials, script.CredentialsReady,
-                script.SupportsBackup, script.Problem, LastStatus(script), NullIfEmpty(script.ResultText), script.Tags.ToList());
+                script.SupportsBackup, script.Problem, LastStatus(script), NullIfEmpty(script.ResultText), script.Tags.ToList(),
+                script.LastDeployment?.DeployedUtc, script.LastDeployment?.By);
         }
     }
 

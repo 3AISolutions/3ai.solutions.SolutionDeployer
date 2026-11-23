@@ -58,6 +58,9 @@ public sealed record TargetInfo(
     string? Problem,
     string? LastStatus,
     string? LastResult,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    DateTimeOffset? LastDeployedUtc = null,
+    string? LastDeployedBy = null);
 
-public sealed record BackupInfo(string Id, long Sequence, DateTimeOffset CreatedUtc, string Kind, bool IsPartial, string Description, string? Source);
+public sealed record BackupInfo(string Id, long Sequence, DateTimeOffset CreatedUtc, string Kind, bool IsPartial, string Description, string? Source,
+    string? CreatedBy = null);

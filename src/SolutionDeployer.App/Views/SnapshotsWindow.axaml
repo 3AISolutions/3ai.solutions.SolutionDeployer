@@ -4,7 +4,7 @@
         x:Class="SolutionDeployer.App.Views.SnapshotsWindow"
         x:DataType="vm:SnapshotsViewModel"
         Title="{Binding Title}"
-        Width="780" Height="480" MinWidth="600" MinHeight="340"
+        Width="920" Height="480" MinWidth="700" MinHeight="340"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/app-icon.ico">
 
@@ -73,13 +73,14 @@
         <Border Classes="card" Padding="2">
             <DockPanel>
                 <!-- Column headers: widths match the item template below -->
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="44,150,70,76,170,*" ColumnSpacing="10" Margin="10,6,10,4">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="44,150,140,70,76,170,*" ColumnSpacing="10" Margin="10,6,10,4">
                     <TextBlock Grid.Column="0" Text="#" Classes="caption" />
                     <TextBlock Grid.Column="1" Text="TAKEN" Classes="caption" />
-                    <TextBlock Grid.Column="2" Text="KIND" Classes="caption" />
-                    <TextBlock Grid.Column="3" Text="SIZE" Classes="caption" />
-                    <TextBlock Grid.Column="4" Text="CHANGES" Classes="caption" />
-                    <TextBlock Grid.Column="5" Text="FROM" Classes="caption" />
+                    <TextBlock Grid.Column="2" Text="BY" Classes="caption" />
+                    <TextBlock Grid.Column="3" Text="KIND" Classes="caption" />
+                    <TextBlock Grid.Column="4" Text="SIZE" Classes="caption" />
+                    <TextBlock Grid.Column="5" Text="CHANGES" Classes="caption" />
+                    <TextBlock Grid.Column="6" Text="FROM" Classes="caption" />
                 </Grid>
                 <Panel>
                     <TextBlock Text="No snapshots yet. One is taken before each deploy while “Back up before publishing” is on."
@@ -91,15 +92,17 @@
                              SelectedItem="{Binding Host.SelectedBackup, Mode=TwoWay}">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:BackupEntryViewModel">
-                                <Grid ColumnDefinitions="44,150,70,76,170,*" ColumnSpacing="10"
+                                <Grid ColumnDefinitions="44,150,140,70,76,170,*" ColumnSpacing="10"
                                       ToolTip.Tip="{Binding DisplayName}">
                                     <TextBlock Grid.Column="0" Text="{Binding SequenceText}" Classes="cell" FontWeight="SemiBold" />
                                     <TextBlock Grid.Column="1" Text="{Binding CreatedText}" Classes="cell" />
-                                    <TextBlock Grid.Column="2" Text="{Binding KindText}" Classes="cell"
+                                    <TextBlock Grid.Column="2" Text="{Binding CreatedByText}" Classes="cell"
+                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CreatedByText}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding KindText}" Classes="cell"
                                                ToolTip.Tip="{Binding KindTip}" />
-                                    <TextBlock Grid.Column="3" Text="{Binding SizeText}" Classes="cell" />
-                                    <TextBlock Grid.Column="4" Text="{Binding ChangesText}" Classes="cell" />
-                                    <TextBlock Grid.Column="5" Text="{Binding SourceText}" Classes="meta"
+                                    <TextBlock Grid.Column="4" Text="{Binding SizeText}" Classes="cell" />
+                                    <TextBlock Grid.Column="5" Text="{Binding ChangesText}" Classes="cell" />
+                                    <TextBlock Grid.Column="6" Text="{Binding SourceText}" Classes="meta"
                                                ToolTip.Tip="{Binding SourceText}" />
                                 </Grid>
                             </DataTemplate>

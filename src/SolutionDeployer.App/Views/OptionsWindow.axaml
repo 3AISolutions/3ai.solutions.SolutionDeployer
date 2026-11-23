@@ -70,6 +70,10 @@
                             <CheckBox Content="Confirm before deploy" IsChecked="{Binding ConfirmBeforeDeploy}" />
                             <TextBlock Classes="hint" Text="Show a confirmation listing the targets before a deploy runs." />
                         </StackPanel>
+                        <StackPanel Classes="option">
+                            <CheckBox Content="Show summary after deploy" IsChecked="{Binding ShowSummaryAfterDeploy}" />
+                            <TextBlock Classes="hint" Text="Open a summary of each target's result and timings when a deploy finishes. The output and the row status dots show the results either way." />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

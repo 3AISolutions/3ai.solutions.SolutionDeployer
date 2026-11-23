@@ -154,6 +154,7 @@ public sealed class BackupService(
                 ProfileName = owner.Name,
                 ProjectName = job.Project.Name,
                 OwnerId = owner.Profile?.FilePath ?? owner.Script!.Id,
+                CreatedBy = LastDeployment.CurrentDeployer,
                 Kind = capture.Kind,
                 CreatedUtc = createdUtc,
                 Sequence = sequence,
@@ -207,6 +208,16 @@ public sealed class BackupService(
         return await store.ListAsync(KeyFor(owner), cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<LastDeployment?> GetLastDeploymentAsync(BackupOwner owner, CancellationToken cancellationToken = default) =>
+        storeProvider.ForOwner(owner).GetLastDeploymentAsync(KeyFor(owner), cancellationToken);
+
+    public async Task<string> RecordDeploymentAsync(BackupOwner owner, CancellationToken cancellationToken = default)
+    {
+        var store = storeProvider.ForOwner(owner);
+        await store.SaveLastDeploymentAsync(KeyFor(owner), LastDeployment.Now(), cancellationToken).ConfigureAwait(false);
+        return store.Description;
+    }
+
     public async Task RestoreAsync(
         DeploymentBackup backup,
         BackupOwner owner,
@@ -226,9 +237,13 @@ public sealed class BackupService(
         if (backup.Kind is BackupKind.MsDeployPartial or BackupKind.ScriptPartial)
         {
             var all = await store.ListAsync(backup.ProfileKey, cancellationToken).ConfigureAwait(false);
+            // Teammates sharing a bucket can take snapshots at the same moment and end up with one sequence
+            // number, so the time breaks the tie.
             chain = all
-                .Where(b => b.Sequence > backup.Sequence)
+                .Where(b => b.Id != backup.Id &&
+                            (b.Sequence > backup.Sequence || (b.Sequence == backup.Sequence && b.CreatedUtc > backup.CreatedUtc)))
                 .OrderByDescending(b => b.Sequence)
+                .ThenByDescending(b => b.CreatedUtc)
                 .Append(backup)
                 .ToList();
 
@@ -1318,16 +1333,43 @@ public sealed class BackupService(
     private static bool IsTrue(PublishProfile profile, string property) =>
         profile.Properties.TryGetValue(property, out var value) && bool.TryParse(value, out var flag) && flag;
 
-    /// <summary>The folder key an owner's snapshots are stored under, in every destination.</summary>
+    /// <summary>
+    /// The folder key an owner's snapshots (and last-deployment record) are stored under, in every destination.
+    /// It is the same on every machine — built from what the repository and the profile or script say, never a
+    /// local path or a per-user id — so a team sharing a bucket shares each target's history.
+    /// </summary>
     public static string KeyFor(BackupOwner owner)
     {
-        // Scripts are keyed by their stable id so renaming one keeps its snapshots.
-        if (owner.Script is { } script)
-            return $"script_{Sanitize(script.Id)}";
+        var project = ProjectFolderName(owner.ProjectDirectory);
 
+        if (owner.Script is { } script)
+        {
+            // Which script, with which arguments, backed up to where: two entries running one script against
+            // different environments (-Env prod / -Env test) keep apart. The name is left out, so renaming keeps them.
+            var identity = string.Join('|', project, NormalizeSeparators(script.ScriptPath), script.Arguments?.Trim(),
+                script.BackupKind, script.BackupServerUrl?.Trim(), NormalizeSeparators(script.BackupPath));
+            var file = Path.GetFileNameWithoutExtension(NormalizeSeparators(script.ScriptPath).Replace('/', Path.DirectorySeparatorChar));
+            return $"script_{Sanitize(file)}_{IdentityHash(identity)}";
+        }
+
+        // The profile's place in the project and where it publishes to — as written in the .pubxml, so it reads the
+        // same on every clone. A profile pointed at another server starts a new history, as its snapshots are of that server.
         var profile = owner.Profile!;
-        return $"{Sanitize(profile.Name)}_{PathHash(profile.FilePath)}";
+        var destination = string.Equals(profile.WebPublishMethod, "MSDeploy", StringComparison.OrdinalIgnoreCase)
+            ? $"{profile.ServerUrl?.Trim()}|{profile.SiteName?.Trim()}"
+            : NormalizeSeparators(profile.Properties.GetValueOrDefault("publishUrl") ?? profile.Properties.GetValueOrDefault("DestinationPath"));
+        var profileIdentity = string.Join('|', project, Path.GetFileName(profile.FilePath), profile.WebPublishMethod, destination);
+        return $"{Sanitize(profile.Name)}_{IdentityHash(profileIdentity)}";
     }
+
+    private static string ProjectFolderName(string projectDirectory) =>
+        Path.GetFileName(projectDirectory.TrimEnd('/', '\\'));
+
+    private static string NormalizeSeparators(string? path) =>
+        (path ?? string.Empty).Trim().Replace('\\', '/').TrimEnd('/');
+
+    private static string IdentityHash(string identity) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity.ToLowerInvariant())))[..12];
 
     /// <summary>The profile-path part of a profile's <see cref="KeyFor"/>.</summary>
     internal static string PathHash(string profileFilePath) =>

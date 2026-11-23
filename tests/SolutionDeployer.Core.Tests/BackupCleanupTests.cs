@@ -211,7 +211,8 @@ public sealed class BackupCleanupTests : IDisposable
         settings.RememberedUserNames[remembered.FilePath] = "deploy";
         _settingsStore.Save(settings);
 
-        var rememberedKey = BackupService.KeyFor(BackupOwner.ForProfile(remembered, _tempDir));
+        // Folders from before owners were recorded were named after the profile's local path.
+        var rememberedKey = $"Staging_{BackupService.PathHash(remembered.FilePath)}";
         await SaveAsync(rememberedKey, ownerId: null, 1, name: "Staging");
         await SaveAsync("Mystery_abcdef12", ownerId: null, 1, name: "Mystery");
 
@@ -232,7 +233,7 @@ public sealed class BackupCleanupTests : IDisposable
         settings.AssignCredential(profile.FilePath, entry.Id); // no remembered username of its own
         _settingsStore.Save(settings);
 
-        var key = BackupService.KeyFor(BackupOwner.ForProfile(profile, _tempDir));
+        var key = $"Shared_{BackupService.PathHash(profile.FilePath)}";
         await SaveAsync(key, ownerId: null, 1, name: "Shared");
 
         var inventory = await NewCleanup().GetInventoryAsync([]);

@@ -41,6 +41,17 @@ public interface IBackupService
     /// <summary>Lists existing snapshots for an owner (from its configured destination), newest first.</summary>
     Task<IReadOnlyList<DeploymentBackup>> ListAsync(BackupOwner owner, CancellationToken cancellationToken = default);
 
+    /// <summary>The owner's last successful deploy (by anyone sharing its backup destination), or null.</summary>
+    Task<LastDeployment?> GetLastDeploymentAsync(BackupOwner owner, CancellationToken cancellationToken = default) =>
+        Task.FromResult<LastDeployment?>(null);
+
+    /// <summary>
+    /// Records a successful deploy of the owner, by this user on this machine, in its backup destination.
+    /// Returns where it was recorded (for the log).
+    /// </summary>
+    Task<string> RecordDeploymentAsync(BackupOwner owner, CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Empty);
+
     /// <summary>
     /// Restores a previously-captured snapshot to its original target. Restoring a partial (MSDeploy
     /// profile) snapshot also rolls back every newer snapshot first, so the target returns to its state

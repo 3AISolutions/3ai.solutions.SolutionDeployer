@@ -19,6 +19,9 @@ public sealed class BackupEntryViewModel(BackupHostViewModel parent, DeploymentB
 
     public string CreatedText => Backup.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
+    /// <summary>Who deployed (and so took the snapshot), e.g. "andre on BUILD-PC"; a dash on older snapshots.</summary>
+    public string CreatedByText => Backup.CreatedBy ?? "—";
+
     public bool IsPartial => Backup.IsPartial;
 
     public string KindText => Backup.IsPartial ? "Partial" : "Full";

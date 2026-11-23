@@ -92,8 +92,15 @@ public sealed class DeploymentBackup
     /// </summary>
     public required string PackagePath { get; init; }
 
-    /// <summary>The destination this snapshot lives in ("local" or an S3 target id).</summary>
-    public string StorageTargetId { get; init; } = Configuration.S3BackupTarget.LocalId;
+    /// <summary>
+    /// The destination this snapshot lives in ("local" or an S3 target id). Each person configures a shared bucket
+    /// under their own id, so the store that lists a snapshot sets this to its own id: restores and deletes then go
+    /// through the reader's destination, not the one of whoever took the snapshot.
+    /// </summary>
+    public string StorageTargetId { get; set; } = Configuration.S3BackupTarget.LocalId;
+
+    /// <summary>Who took the snapshot, i.e. who deployed (e.g. "andre on BUILD-PC"); null on older snapshots.</summary>
+    public string? CreatedBy { get; init; }
 
     /// <summary>
     /// Fingerprint of the captured payload (entry names + sizes, excluding volatile MSDeploy package

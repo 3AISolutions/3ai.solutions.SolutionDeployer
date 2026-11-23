@@ -28,7 +28,12 @@ sequentially or in parallel — with live build output. Self-updates from GitHub
 - **Per-target credentials** (username/password) for MSDeploy publishes. Passwords are kept only in the
   OS credential store (or, by choice, inside a password-protected settings export), never in the settings
   file, and are redacted from the logged command line; usernames can be remembered.
-- **Live output console** with per-job tagging and error highlighting; cancel mid-run.
+- **Live output console** with each target's lines tagged in its own colour and error highlighting; click a target to
+  see only its output. A new deploy starts with a clear console; cancel mid-run. The summary window after a deploy can
+  be turned off in Options.
+- **Team-shared backups** — snapshots taken before a deploy go to local disk or an S3-compatible bucket. Everyone
+  pointing at the same bucket and prefix sees each other's snapshots of a target (each says who took it), and every
+  row shows when and by whom that target was last deployed.
 - **Self-update** via [Velopack](https://velopack.io) from GitHub Releases.
 - **Runs in the background** (optional) — under *Options*, choose whether closing the window keeps the app
   running in the tray or quits it, and whether it starts (in the tray) when you sign in.

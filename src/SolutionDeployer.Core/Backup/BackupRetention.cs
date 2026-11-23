@@ -56,7 +56,8 @@ public static class BackupRetention
     public static IReadOnlyList<DeploymentBackup> DeletionSet(
         DeploymentBackup backup, IEnumerable<DeploymentBackup> ownerSnapshots) =>
         OldestFirst(ownerSnapshots
-            .Where(b => b.Id != backup.Id && b.IsPartial && b.Sequence < backup.Sequence)
+            .Where(b => b.Id != backup.Id && b.IsPartial &&
+                        (b.Sequence < backup.Sequence || (b.Sequence == backup.Sequence && b.CreatedUtc < backup.CreatedUtc)))
             .Append(backup));
 
     /// <summary>

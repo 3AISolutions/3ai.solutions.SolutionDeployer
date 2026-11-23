@@ -72,6 +72,8 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
                 }
 
                 result = await PublishAsync(job, engine, prepared, timings, Sink, cancellationToken).ConfigureAwait(false);
+                if (result.IsSuccess)
+                    await RecordDeploymentAsync(job, Sink).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -244,6 +246,28 @@ public sealed class DeploymentRunner(IPublishEngineFactory engineFactory, IBacku
             CommandLine = result.CommandLine,
             ErrorMessage = result.ErrorMessage,
         };
+    }
+
+    /// <summary>
+    /// Notes the successful deploy (when, by whom) in the target's backup destination, where everyone sharing it
+    /// sees it. Informative only: a destination that can't be reached just logs why. The deploy is done by now, so
+    /// a cancel no longer applies here: it would only turn a success into "cancelled".
+    /// </summary>
+    private async Task RecordDeploymentAsync(PublishJob job, Action<OutputLine> sink)
+    {
+        if (BackupOwner.ForJob(job) is not { } owner)
+            return;
+
+        try
+        {
+            var where = await backupService.RecordDeploymentAsync(owner).ConfigureAwait(false);
+            if (where.Length > 0)
+                sink(OutputLine.Info($"[deploy] Recorded this deploy in {where}."));
+        }
+        catch (Exception ex)
+        {
+            sink(OutputLine.Info($"[deploy] Could not record this deploy in the backup destination: {ex.Message}"));
+        }
     }
 
     /// <summary>
