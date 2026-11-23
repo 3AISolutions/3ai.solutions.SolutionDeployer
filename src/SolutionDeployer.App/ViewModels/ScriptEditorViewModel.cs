@@ -43,6 +43,7 @@ public partial class ScriptEditorViewModel : ObservableObject
         _requiresCredentials = draft.RequiresCredentials;
         _userNameVariable = draft.UserNameVariable;
         _passwordVariable = draft.PasswordVariable;
+        _testCommand = draft.TestCommand ?? string.Empty;
         _selectedBackupKind = BackupKinds.First(k => k.Kind == draft.BackupKind);
         _backupServerUrl = draft.BackupServerUrl ?? string.Empty;
         _backupPath = draft.BackupPath ?? string.Empty;
@@ -78,6 +79,10 @@ public partial class ScriptEditorViewModel : ObservableObject
 
     [ObservableProperty]
     private string _passwordVariable;
+
+    /// <summary>Optional command the Credentials dialog runs to check the username/password (exit code 0 = OK).</summary>
+    [ObservableProperty]
+    private string _testCommand;
 
     public static IReadOnlyList<BackupKindOption> BackupKinds { get; } =
     [
@@ -201,6 +206,7 @@ public partial class ScriptEditorViewModel : ObservableObject
             RequiresCredentials = RequiresCredentials,
             UserNameVariable = string.IsNullOrWhiteSpace(UserNameVariable) ? ScriptTarget.DefaultUserNameVariable : UserNameVariable.Trim(),
             PasswordVariable = string.IsNullOrWhiteSpace(PasswordVariable) ? ScriptTarget.DefaultPasswordVariable : PasswordVariable.Trim(),
+            TestCommand = RequiresCredentials && !string.IsNullOrWhiteSpace(TestCommand) ? TestCommand.Trim() : null,
             BackupKind = SelectedBackupKind.Kind,
             BackupServerUrl = IsWebDeployBackup ? BackupServerUrl.Trim() : null,
             BackupPath = NeedsBackupFolder ? BackupPath.Trim() : null,

@@ -67,7 +67,7 @@
                     <StackPanel>
                         <StackPanel Classes="field">
                             <CheckBox Content="Requires credentials" IsChecked="{Binding RequiresCredentials}" FontWeight="SemiBold" />
-                            <TextBlock Text="Asks for a username and password on the script row (like a publish profile) and passes them to the script as these environment variables."
+                            <TextBlock Text="The script runs with a username and password (set from the row's ⋯ menu → Credentials…), passed to it as these environment variables."
                                        Classes="hint" />
                         </StackPanel>
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding RequiresCredentials}">
@@ -80,6 +80,13 @@
                                 <TextBox Text="{Binding PasswordVariable}" PlaceholderText="DEPLOY_PASSWORD" />
                             </StackPanel>
                         </Grid>
+                        <StackPanel Classes="field" IsVisible="{Binding RequiresCredentials}">
+                            <TextBlock Text="Test command (optional)" Classes="label" />
+                            <TextBox Text="{Binding TestCommand}" Classes="mono"
+                                     PlaceholderText="e.g. pwsh -File check-login.ps1" />
+                            <TextBlock Text="Run by Test in the Credentials dialog, from the working directory with the same variables (and SD_CREDENTIAL_TEST=1), through cmd on Windows or sh elsewhere. Exit code 0 means the credentials work; it should not change anything."
+                                       Classes="hint" TextWrapping="Wrap" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

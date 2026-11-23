@@ -67,6 +67,35 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
+    /// <summary>The credential library: named usernames that targets can share (passwords in the OS store).</summary>
+    public List<SavedCredential> Credentials { get; set; } = [];
+
+    /// <summary>
+    /// Targets that use a library entry instead of their own credentials, keyed like
+    /// <see cref="RememberedUserNames"/> (profile file path or script credential key) → <see cref="SavedCredential.Id"/>.
+    /// </summary>
+    public Dictionary<string, string> CredentialAssignments { get; set; } = new();
+
+    /// <summary>The library entry <paramref name="targetKey"/> uses, or null when it uses its own credentials.</summary>
+    public SavedCredential? GetAssignedCredential(string targetKey) =>
+        CredentialAssignments.TryGetValue(targetKey, out var id) ? FindCredential(id) : null;
+
+    public SavedCredential? FindCredential(string? id) =>
+        string.IsNullOrEmpty(id) ? null : Credentials.FirstOrDefault(c => c.Id == id);
+
+    /// <summary>Points <paramref name="targetKey"/> at a library entry, or back to its own credentials (null).</summary>
+    public void AssignCredential(string targetKey, string? credentialId)
+    {
+        if (string.IsNullOrEmpty(credentialId))
+            CredentialAssignments.Remove(targetKey);
+        else
+            CredentialAssignments[targetKey] = credentialId;
+    }
+
+    /// <summary>The target keys that use the library entry <paramref name="credentialId"/>.</summary>
+    public IReadOnlyList<string> TargetsUsing(string credentialId) =>
+        CredentialAssignments.Where(a => a.Value == credentialId).Select(a => a.Key).ToList();
+
     /// <summary>GitHub "owner/repo" used by the updater to find releases.</summary>
     public string UpdateRepository { get; set; } = "3AISolutions/3ai.solutions.SolutionDeployer";
 

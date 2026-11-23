@@ -218,6 +218,7 @@ public sealed class BackupCleanupService(IBackupStoreProvider storeProvider, Set
             _profilePathsByHash = settings.DeployHistory.Keys
                 .Concat(settings.ProfileBackupTarget.Keys)
                 .Concat(settings.RememberedUserNames.Keys)
+                .Concat(settings.CredentialAssignments.Keys)
                 .Where(Path.IsPathRooted)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .GroupBy(BackupService.PathHash)

@@ -407,13 +407,18 @@
                                                                                                 IsVisible="{Binding SupportsBackup}"
                                                                                                 ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
                                                                                                 Command="{Binding ToggleBackupsCommand}" />
-                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options">
+                                                                                        <Button Classes="small" Content="Set password" IsVisible="{Binding NeedsPassword}"
+                                                                                                Foreground="#D08000" Click="OnRowCredentialsClick"
+                                                                                                ToolTip.Tip="This target needs a password to deploy: open its Credentials" />
+                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options"
+                                                                                                Click="OnRowMenuClick">
                                                                                             <Button.Flyout>
                                                                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                                                                                                     <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
                                                                                                               IsVisible="{Binding RequiresCredentials}" />
-                                                                                                    <MenuItem Header="{Binding CredentialsMenuText}" Command="{Binding ToggleCredentialsCommand}"
-                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="Credentials…" Click="OnCredentialsClick"
+                                                                                                              IsVisible="{Binding RequiresCredentials}"
+                                                                                                              ToolTip.Tip="Choose a saved credential or this target's own username and password, save it, and test it" />
                                                                                                     <Separator IsVisible="{Binding RequiresCredentials}" />
                                                                                                     <MenuItem Header="Publish engine" ToolTip.Tip="{Binding EngineHint}">
                                                                                                         <MenuItem Header="dotnet publish" ToggleType="Radio" GroupName="engine"
@@ -430,23 +435,6 @@
                                                                                         </Button>
                                                                                     </StackPanel>
                                                                                 </Grid>
-
-                                                                                <!-- Credentials: only when needed, or when opened from the ⋯ menu -->
-                                                                                <WrapPanel Grid.Row="1" Grid.Column="1" Margin="18,4,0,1"
-                                                                                           ItemSpacing="6" LineSpacing="4">
-                                                                                    <WrapPanel.IsVisible>
-                                                                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                                                                            <Binding Path="RequiresCredentials" />
-                                                                                            <Binding Path="ShowCredentials" />
-                                                                                        </MultiBinding>
-                                                                                    </WrapPanel.IsVisible>
-                                                                                    <TextBox Classes="small" Text="{Binding UserName}" PlaceholderText="username" Width="160" />
-                                                                                    <TextBox Classes="small" Text="{Binding Password}" PlaceholderText="password"
-                                                                                             Width="130" PasswordChar="•" />
-                                                                                    <CheckBox Classes="small" Content="Remember" IsChecked="{Binding RememberPassword}"
-                                                                                              IsVisible="{Binding CanRememberPassword}"
-                                                                                              ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
-                                                                                </WrapPanel>
 
                                                                                 <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
                                                                                                 Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"
@@ -490,14 +478,18 @@
                                                                                                 IsVisible="{Binding SupportsBackup}"
                                                                                                 ToolTip.Tip="Show/hide saved snapshots of this script's target"
                                                                                                 Command="{Binding ToggleBackupsCommand}" />
+                                                                                        <Button Classes="small" Content="Set password" IsVisible="{Binding NeedsPassword}"
+                                                                                                Foreground="#D08000" Click="OnRowCredentialsClick"
+                                                                                                ToolTip.Tip="This target needs a password to deploy: open its Credentials" />
                                                                                         <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Script options"
                                                                                                 Click="OnRowMenuClick">
                                                                                             <Button.Flyout>
                                                                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                                                                                                     <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
                                                                                                               IsVisible="{Binding RequiresCredentials}" />
-                                                                                                    <MenuItem Header="{Binding CredentialsMenuText}" Command="{Binding ToggleCredentialsCommand}"
-                                                                                                              IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="Credentials…" Click="OnCredentialsClick"
+                                                                                                              IsVisible="{Binding RequiresCredentials}"
+                                                                                                              ToolTip.Tip="Choose a saved credential or this target's own username and password, save it, and test it" />
                                                                                                     <Separator IsVisible="{Binding RequiresCredentials}" />
                                                                                                     <MenuItem Header="Edit script…" Click="OnEditScriptClick" />
                                                                                                     <Separator />
@@ -507,22 +499,6 @@
                                                                                         </Button>
                                                                                     </StackPanel>
                                                                                 </Grid>
-
-                                                                                <WrapPanel Grid.Row="1" Grid.Column="1" Margin="18,4,0,1"
-                                                                                           ItemSpacing="6" LineSpacing="4">
-                                                                                    <WrapPanel.IsVisible>
-                                                                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                                                                            <Binding Path="RequiresCredentials" />
-                                                                                            <Binding Path="ShowCredentials" />
-                                                                                        </MultiBinding>
-                                                                                    </WrapPanel.IsVisible>
-                                                                                    <TextBox Classes="small" Text="{Binding UserName}" PlaceholderText="username" Width="160" />
-                                                                                    <TextBox Classes="small" Text="{Binding Password}" PlaceholderText="password"
-                                                                                             Width="130" PasswordChar="•" />
-                                                                                    <CheckBox Classes="small" Content="Remember" IsChecked="{Binding RememberPassword}"
-                                                                                              IsVisible="{Binding CanRememberPassword}"
-                                                                                              ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
-                                                                                </WrapPanel>
 
                                                                                 <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
                                                                                                 Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"

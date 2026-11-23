@@ -48,6 +48,12 @@ public sealed class ScriptTarget
     public string PasswordVariable { get; set; } = DefaultPasswordVariable;
 
     /// <summary>
+    /// Optional shell command that checks the credentials without deploying (e.g. a read-only login), run with
+    /// the same environment as the script. Exit code 0 means the credentials work.
+    /// </summary>
+    public string? TestCommand { get; set; }
+
+    /// <summary>
     /// What to snapshot before the script runs (the app can't tell where a script deploys to). The whole
     /// folder is captured; restore makes it match the snapshot again.
     /// </summary>

@@ -1,13 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.Core.Backup;
+using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 using SolutionDeployer.Core.Publishing;
 
 namespace SolutionDeployer.App.ViewModels;
 
 /// <summary>A selectable script-deployment row under a project.</summary>
-public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTarget
+public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTarget, ICredentialTarget
 {
     // Status and ResultText (below) satisfy ISelectableTarget.
     public ScriptTargetViewModel(
@@ -27,8 +27,6 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
             _rememberPassword = true;
         }
 
-        // A saved password means there's nothing to fill in, so keep the fields tucked away in the row menu.
-        _showCredentials = rememberedPassword is null;
         RefreshAvailability();
     }
 
@@ -49,28 +47,37 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
     private string _userName = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary), nameof(CredentialsReady), nameof(NeedsPassword))]
     private string _password = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private bool _rememberPassword;
 
-    /// <summary>Whether the username/password fields are expanded on the row.</summary>
+    /// <summary>The library entry this script runs with, or null for its own credentials.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CredentialsMenuText))]
-    private bool _showCredentials;
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
+    private SavedCredential? _credentialEntry;
 
-    public string CredentialsMenuText => ShowCredentials ? "Hide credentials" : "Edit credentials…";
+    public string CredentialKey => Target.CredentialKey;
+
+    public string? DefaultUserName => null;
 
     /// <summary>Who the script runs as, shown at the top of the row menu.</summary>
-    public string CredentialsSummary =>
-        string.IsNullOrWhiteSpace(UserName) ? "No username set"
-        : RememberPassword && !string.IsNullOrEmpty(Password) ? $"{UserName} (password saved)"
-        : UserName;
+    public string CredentialsSummary => CredentialText.Summarize(UserName, Password, RememberPassword, CredentialEntry);
 
-    [RelayCommand]
-    private void ToggleCredentials() => ShowCredentials = !ShowCredentials;
+    public bool CredentialsReady => !RequiresCredentials || !string.IsNullOrEmpty(Password);
+
+    /// <summary>A credentialed script without a password: the row offers to set one.</summary>
+    public bool NeedsPassword => !CredentialsReady;
+
+    public void ApplyCredentials(ResolvedCredentials credentials, bool rememberPassword)
+    {
+        CredentialEntry = credentials.Entry;
+        UserName = credentials.UserName;
+        Password = credentials.Password ?? string.Empty;
+        RememberPassword = rememberPassword && !string.IsNullOrEmpty(Password);
+    }
 
     public override string Name => Target.Name;
 
@@ -121,8 +128,8 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(RequiresCredentials));
         OnPropertyChanged(nameof(CanRememberPassword));
-        if (RequiresCredentials && string.IsNullOrEmpty(Password))
-            ShowCredentials = true; // credentials just switched on: there's nothing saved to hide
+        OnPropertyChanged(nameof(CredentialsReady));
+        OnPropertyChanged(nameof(NeedsPassword));
         RefreshAvailability();
     }
 

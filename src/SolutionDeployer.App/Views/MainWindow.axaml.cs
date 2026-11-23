@@ -162,4 +162,17 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
             await vm.RemoveScriptCommand.ExecuteAsync(script);
     }
+
+    private async void OnCredentialsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ICredentialTarget target)
+            await vm.EditCredentialsCommand.ExecuteAsync(target);
+    }
+
+    /// <summary>A row's own "Set password" button (not in a menu, so the row is its data context).</summary>
+    private async void OnRowCredentialsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && (sender as Control)?.DataContext is ICredentialTarget target)
+            await vm.EditCredentialsCommand.ExecuteAsync(target);
+    }
 }

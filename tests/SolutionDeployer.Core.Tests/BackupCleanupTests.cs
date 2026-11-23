@@ -223,6 +223,25 @@ public sealed class BackupCleanupTests : IDisposable
     }
 
     [Fact]
+    public async Task Inventory_matches_older_snapshots_to_profiles_that_use_a_library_credential()
+    {
+        var profile = Profile(ExistingFile("Shared.pubxml"));
+        var settings = _settingsStore.Load();
+        var entry = new SavedCredential { Name = "Shared", UserName = "deploy" };
+        settings.Credentials.Add(entry);
+        settings.AssignCredential(profile.FilePath, entry.Id); // no remembered username of its own
+        _settingsStore.Save(settings);
+
+        var key = BackupService.KeyFor(BackupOwner.ForProfile(profile, _tempDir));
+        await SaveAsync(key, ownerId: null, 1, name: "Shared");
+
+        var inventory = await NewCleanup().GetInventoryAsync([]);
+
+        Assert.Equal(BackupOwnerStatus.Active, Group(inventory, key).Status);
+        Assert.Equal(profile.FilePath, Group(inventory, key).OwnerId);
+    }
+
+    [Fact]
     public async Task Inventory_matches_older_snapshots_to_loaded_owners()
     {
         var profile = Profile(ExistingFile("Prod.pubxml"));

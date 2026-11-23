@@ -14,7 +14,7 @@ public sealed class DeployerTools(IDeployerHost host, RunRegistry runs)
     [McpServerTool(Name = "list_targets", Title = "List deploy targets", ReadOnly = true, Idempotent = true)]
     [Description("Lists the solutions and projects added to Solution Deployer and their deploy targets: publish profiles " +
                  "and deployment scripts. Use a target's id with deploy, list_backups and get_release_summary. " +
-                 "credentialsReady=false means the target needs a password that is not saved in the app; save it there first.")]
+                 "credentialsReady=false means the target needs a password that is not saved in the app (its own, or a saved credential from the app's library); save it there first.")]
     public async Task<DeployerSnapshot> ListTargets(
         [Description("Optional text to match against source, project, target or destination names.")] string? filter = null,
         CancellationToken cancellationToken = default)

@@ -94,7 +94,7 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
             yield return new TargetInfo(
                 IdOf(profile), "profile", profile.Name, project.Name,
                 profile.Profile.WebPublishMethod, profile.EngineLabel, NullIfEmpty(profile.Target),
-                profile.RequiresCredentials, !profile.RequiresCredentials || profile.Password.Length > 0,
+                profile.RequiresCredentials, profile.CredentialsReady,
                 profile.SupportsBackup, null, LastStatus(profile), NullIfEmpty(profile.ResultText));
         }
 
@@ -103,7 +103,7 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
             yield return new TargetInfo(
                 IdOf(script), "script", script.Name, project.Name,
                 "Script", null, script.Summary,
-                script.RequiresCredentials, !script.RequiresCredentials || script.Password.Length > 0,
+                script.RequiresCredentials, script.CredentialsReady,
                 script.SupportsBackup, script.Problem, LastStatus(script), NullIfEmpty(script.ResultText));
         }
     }

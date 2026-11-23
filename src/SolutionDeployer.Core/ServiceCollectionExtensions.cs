@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DeploymentRunner>();
 
         services.AddSingleton<MsDeployLocator>();
+        services.AddSingleton<CredentialTester>();
         services.AddSingleton<IBackupStoreProvider>(sp => new BackupStoreProvider(
             sp.GetRequiredService<SettingsStore>(),
             sp.GetRequiredService<ICredentialStore>()));

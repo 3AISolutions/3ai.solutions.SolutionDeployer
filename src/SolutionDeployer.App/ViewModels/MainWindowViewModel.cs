@@ -35,6 +35,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IAutoStartService _autoStart;
     private readonly IMcpServerService _mcpServer;
     private readonly ISettingsBackupService _settingsBackup;
+    private readonly ICredentialsDialogService? _credentialsDialog;
     private AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -61,7 +62,8 @@ public partial class MainWindowViewModel : ObservableObject
         IBackupManagerService backupManager,
         IAutoStartService autoStart,
         IMcpServerService mcpServer,
-        ISettingsBackupService settingsBackup)
+        ISettingsBackupService settingsBackup,
+        ICredentialsDialogService? credentialsDialog = null)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -83,6 +85,7 @@ public partial class MainWindowViewModel : ObservableObject
         _autoStart = autoStart;
         _mcpServer = mcpServer;
         _settingsBackup = settingsBackup;
+        _credentialsDialog = credentialsDialog;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -445,11 +448,8 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Builds a script row with its remembered credentials and backup state.</summary>
     private ScriptTargetViewModel CreateScriptViewModel(ProjectViewModel project, ScriptTarget script)
     {
-        var credentialsAvailable = _credentialStore.IsAvailable;
-        _settings.RememberedUserNames.TryGetValue(script.CredentialKey, out var rememberedUser);
-        var rememberedPassword = credentialsAvailable ? _credentialStore.Get(script.CredentialKey) : null;
-
-        var scriptVm = new ScriptTargetViewModel(project, script, rememberedUser, rememberedPassword, credentialsAvailable);
+        var scriptVm = new ScriptTargetViewModel(project, script, credentialStoreAvailable: _credentialStore.IsAvailable);
+        LoadCredentials(scriptVm);
         scriptVm.BackupDestinationChanged += OnBackupDestinationChanged;
         ConfigureBackup(scriptVm);
         return scriptVm;
@@ -472,9 +472,7 @@ public partial class MainWindowViewModel : ObservableObject
         var project = script.Parent;
         project.ScriptTargets.Remove(script);
         project.NotifyScriptsChanged();
-        _settings.RememberedUserNames.Remove(script.Target.CredentialKey);
-        if (_credentialStore.IsAvailable)
-            _credentialStore.Delete(script.Target.CredentialKey);
+        TargetCredentials.Forget(_settings, _credentialStore, script.Target.CredentialKey);
         PersistScriptTargets(project);
         OnPropertyChanged(nameof(SelectedCount));
         SaveCurrentSelection();
@@ -533,10 +531,9 @@ public partial class MainWindowViewModel : ObservableObject
                 projectVm.SelectionChanged += OnProjectSelectionChanged;
                 foreach (var profile in project.Profiles)
                 {
-                    _settings.RememberedUserNames.TryGetValue(profile.FilePath, out var rememberedUser);
-                    var rememberedPassword = credentialsAvailable ? _credentialStore.Get(profile.FilePath) : null;
                     var profileVm = new ProfileViewModel(
-                        projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
+                        projectVm, profile, _settings.DefaultEngine, null, null, credentialsAvailable);
+                    LoadCredentials(profileVm);
                     profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
                     ConfigureBackup(profileVm);
                     projectVm.Profiles.Add(profileVm);
@@ -767,24 +764,12 @@ public partial class MainWindowViewModel : ObservableObject
                 ConfirmBeforeDeploy = false; // persisted via OnConfirmBeforeDeployChanged
         }
 
-        // Remember what was typed for next time (the opt-in password goes to the OS secure store).
-        foreach (var profileVm in selectedProfiles)
+        // Credentials are saved from each row's Credentials dialog; ask for any password a target still lacks.
+        if (!await PromptForMissingPasswordsAsync(selectedProfiles.Cast<ICredentialTarget>().Concat(selectedScripts)))
         {
-            if (!string.IsNullOrWhiteSpace(profileVm.UserName))
-                _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
-
-            PersistPassword(profileVm.Profile.FilePath, profileVm.RememberPassword, profileVm.Password);
+            StatusMessage = "Deployment cancelled: a target has no password.";
+            return;
         }
-
-        foreach (var scriptVm in selectedScripts.Where(s => s.RequiresCredentials))
-        {
-            if (!string.IsNullOrWhiteSpace(scriptVm.UserName))
-                _settings.RememberedUserNames[scriptVm.Target.CredentialKey] = scriptVm.UserName;
-
-            PersistPassword(scriptVm.Target.CredentialKey, scriptVm.RememberPassword, scriptVm.Password);
-        }
-
-        _settingsStore.Save(_settings);
 
         var summary = await RunDeploymentAsync(selectedProfiles, selectedScripts, RunInParallel, BackupBeforePublish, observer: null);
         if (summary is not null)
@@ -1255,12 +1240,12 @@ public partial class MainWindowViewModel : ObservableObject
         var profiles = targets.OfType<ProfileViewModel>().ToList();
         var scripts = targets.OfType<ScriptTargetViewModel>().ToList();
 
-        var missingPasswords = profiles.Where(p => p.RequiresCredentials && string.IsNullOrEmpty(p.Password)).Select(p => p.Name)
-            .Concat(scripts.Where(s => s.RequiresCredentials && string.IsNullOrEmpty(s.Password)).Select(s => s.Name))
+        var missingPasswords = profiles.Where(p => !p.CredentialsReady).Select(p => p.Name)
+            .Concat(scripts.Where(s => !s.CredentialsReady).Select(s => s.Name))
             .ToList();
         if (missingPasswords.Count > 0)
-            return $"No saved password for {string.Join(", ", missingPasswords)}. Enter it in the app and tick " +
-                   "'Remember' (passwords are never sent over MCP).";
+            return $"No saved password for {string.Join(", ", missingPasswords)}. Set it in the app (the row's ⋯ menu → " +
+                   "Credentials…) and tick 'Remember', or pick a saved credential (passwords are never sent over MCP).";
 
         if (scripts.FirstOrDefault(s => s.HasProblem) is { } broken)
             return $"Script '{broken.Name}' can't run: {broken.Problem}";
@@ -1425,16 +1410,136 @@ public partial class MainWindowViewModel : ObservableObject
             Log.RemoveAt(0);
     }
 
-    /// <summary>Saves or clears a profile's/script's password in the OS secure store based on its opt-in flag.</summary>
-    private void PersistPassword(string key, bool remember, string password)
-    {
-        if (!_credentialStore.IsAvailable)
-            return;
+    // ---- Credentials ------------------------------------------------------
 
-        if (remember && !string.IsNullOrEmpty(password))
-            _credentialStore.Set(key, password);
-        else
-            _credentialStore.Delete(key);
+    /// <summary>Gives a row the credentials its settings point at (a library entry or its own).</summary>
+    private void LoadCredentials(ICredentialTarget target)
+    {
+        var resolved = TargetCredentials.Resolve(_settings, _credentialStore, target.CredentialKey, target.DefaultUserName);
+        target.ApplyCredentials(resolved, rememberPassword: resolved.HasSavedPassword);
+    }
+
+    /// <summary>
+    /// Re-reads every row's credentials after the library changed. A row with its own password typed for this
+    /// session only (not saved) keeps it.
+    /// </summary>
+    private void RefreshAllCredentials()
+    {
+        foreach (var target in AllCredentialTargets())
+        {
+            var sessionPassword = target.CredentialEntry is null && !target.RememberPassword ? target.Password : null;
+            var resolved = TargetCredentials.Resolve(_settings, _credentialStore, target.CredentialKey, target.DefaultUserName);
+            if (resolved is { Source: CredentialSource.Own, HasSavedPassword: false } && !string.IsNullOrEmpty(sessionPassword))
+                target.ApplyCredentials(resolved with { Password = sessionPassword }, rememberPassword: false);
+            else
+                target.ApplyCredentials(resolved, rememberPassword: resolved.HasSavedPassword);
+        }
+    }
+
+    private IEnumerable<ICredentialTarget> AllCredentialTargets() =>
+        Sources.SelectMany(s => s.Projects)
+            .SelectMany(p => p.Profiles.Cast<ICredentialTarget>().Concat(p.ScriptTargets));
+
+    /// <summary>A target's display name from its credential key, for the library's "used by" lists.</summary>
+    private string DescribeCredentialTarget(string key)
+    {
+        switch (AllCredentialTargets().FirstOrDefault(t => t.CredentialKey == key))
+        {
+            case ProfileViewModel profile:
+                return $"{profile.Parent.Name} → {profile.Name}";
+            case ScriptTargetViewModel script:
+                return $"{script.Parent.Name} → {script.Name}";
+        }
+
+        if (_settings.ScriptTargets.Values.SelectMany(list => list).FirstOrDefault(t => t.CredentialKey == key) is { } saved)
+            return $"{saved.Name} (script)";
+
+        return Path.IsPathRooted(key) ? Path.GetFileNameWithoutExtension(key) : key;
+    }
+
+    /// <summary>Opens a row's Credentials dialog (⋯ → Credentials…).</summary>
+    [RelayCommand]
+    private Task EditCredentialsAsync(ICredentialTarget? target) =>
+        target is null ? Task.CompletedTask : EditCredentialsCoreAsync(target, prompt: null);
+
+    private async Task<bool> EditCredentialsCoreAsync(ICredentialTarget target, string? prompt)
+    {
+        if (_credentialsDialog is null)
+            return false;
+
+        var request = target switch
+        {
+            ProfileViewModel p => new CredentialsDialogRequest(
+                p, $"Publish profile · {p.Parent.Name}", DescribeConnection(p), p.Profile, null, null, prompt),
+            ScriptTargetViewModel s => new CredentialsDialogRequest(
+                s, $"Script · {s.Parent.Name}", DescribeConnection(s), null, s.Target, s.Parent.ProjectDirectory, prompt),
+            _ => throw new ArgumentException("Unknown target.", nameof(target)),
+        };
+
+        var result = await _credentialsDialog.EditAsync(_settings, request, DescribeCredentialTarget);
+        if (result.LibraryChanged)
+            RefreshAllCredentials();
+        if (result.Saved)
+            StatusMessage = $"Saved the credentials for {target.Name}.";
+        return result.Saved;
+    }
+
+    /// <summary>Opens the credential library manager.</summary>
+    [RelayCommand]
+    private async Task ManageCredentialsAsync()
+    {
+        if (_credentialsDialog is not null && await _credentialsDialog.ShowLibraryAsync(_settings, DescribeCredentialTarget))
+            RefreshAllCredentials();
+    }
+
+    /// <summary>
+    /// Opens the Credentials dialog for each target that needs a password it doesn't have. False when the user
+    /// cancels one, or no dialog can be shown.
+    /// </summary>
+    private async Task<bool> PromptForMissingPasswordsAsync(IEnumerable<ICredentialTarget> targets)
+    {
+        foreach (var target in targets.Where(t => !t.CredentialsReady).ToList())
+        {
+            var saved = await EditCredentialsCoreAsync(target,
+                $"{target.Name} needs a password to deploy. Enter it (tick Remember to save it), or choose a saved credential.");
+            if (!saved || !target.CredentialsReady)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<ConnectionDetail> DescribeConnection(ProfileViewModel profile)
+    {
+        var p = profile.Profile;
+        var details = new List<ConnectionDetail>
+        {
+            new("Profile", Path.GetFileName(p.FilePath)),
+            new("Publish method", p.WebPublishMethod ?? "—"),
+        };
+        if (!string.IsNullOrWhiteSpace(p.ServerUrl))
+            details.Add(new("Server URL", p.ServerUrl));
+        if (!string.IsNullOrWhiteSpace(p.SiteName))
+            details.Add(new("Site", p.SiteName));
+        details.Add(new("User in profile", string.IsNullOrWhiteSpace(p.UserName) ? "(none)" : p.UserName));
+        return details;
+    }
+
+    private static IReadOnlyList<ConnectionDetail> DescribeConnection(ScriptTargetViewModel script)
+    {
+        var t = script.Target;
+        var details = new List<ConnectionDetail>
+        {
+            new("Script", t.ScriptPath),
+            new("Username variable",
+                string.IsNullOrWhiteSpace(t.UserNameVariable) ? ScriptTarget.DefaultUserNameVariable : t.UserNameVariable),
+            new("Password variable",
+                string.IsNullOrWhiteSpace(t.PasswordVariable) ? ScriptTarget.DefaultPasswordVariable : t.PasswordVariable),
+        };
+        if (t.BackupKind == ScriptBackupKind.WebDeploy && !string.IsNullOrWhiteSpace(t.BackupServerUrl))
+            details.Add(new("Web Deploy server", t.BackupServerUrl));
+        details.Add(new("Test command", string.IsNullOrWhiteSpace(t.TestCommand) ? "(none)" : t.TestCommand));
+        return details;
     }
 
     // ---- Startup ----------------------------------------------------------
