@@ -67,6 +67,72 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
+    /// <summary>
+    /// User-chosen tags per deploy target, keyed like <see cref="RememberedUserNames"/>: the profile file path or
+    /// <see cref="Models.ScriptTarget.CredentialKey"/> (<see cref="Backup.BackupOwner.SettingsKey"/>).
+    /// </summary>
+    public Dictionary<string, List<string>> TargetTags { get; set; } = new();
+
+    public IReadOnlyList<string> GetTargetTags(string targetKey) =>
+        TargetTags.TryGetValue(targetKey, out var tags) ? tags : [];
+
+    /// <summary>Stores a target's tags, normalised (see <see cref="NormalizeTags"/>); no tags removes the entry.</summary>
+    public void SetTargetTags(string targetKey, IEnumerable<string?> tags)
+    {
+        var list = NormalizeTags(tags);
+        if (list.Count == 0)
+            TargetTags.Remove(targetKey);
+        else
+            TargetTags[targetKey] = list;
+    }
+
+    /// <summary>Every tag in use, case-insensitively distinct, sorted.</summary>
+    public IReadOnlyList<string> AllTargetTags() =>
+        NormalizeTags(TargetTags.Values.SelectMany(t => t)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Trims tags and drops blanks and case-insensitive duplicates, keeping the first spelling and order.</summary>
+    public static List<string> NormalizeTags(IEnumerable<string?> tags)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var tag in tags)
+        {
+            var trimmed = tag?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed))
+                result.Add(trimmed);
+        }
+        return result;
+    }
+
+    /// <summary>The credential library: named usernames that targets can share (passwords in the OS store).</summary>
+    public List<SavedCredential> Credentials { get; set; } = [];
+
+    /// <summary>
+    /// Targets that use a library entry instead of their own credentials, keyed like
+    /// <see cref="RememberedUserNames"/> (profile file path or script credential key) → <see cref="SavedCredential.Id"/>.
+    /// </summary>
+    public Dictionary<string, string> CredentialAssignments { get; set; } = new();
+
+    /// <summary>The library entry <paramref name="targetKey"/> uses, or null when it uses its own credentials.</summary>
+    public SavedCredential? GetAssignedCredential(string targetKey) =>
+        CredentialAssignments.TryGetValue(targetKey, out var id) ? FindCredential(id) : null;
+
+    public SavedCredential? FindCredential(string? id) =>
+        string.IsNullOrEmpty(id) ? null : Credentials.FirstOrDefault(c => c.Id == id);
+
+    /// <summary>Points <paramref name="targetKey"/> at a library entry, or back to its own credentials (null).</summary>
+    public void AssignCredential(string targetKey, string? credentialId)
+    {
+        if (string.IsNullOrEmpty(credentialId))
+            CredentialAssignments.Remove(targetKey);
+        else
+            CredentialAssignments[targetKey] = credentialId;
+    }
+
+    /// <summary>The target keys that use the library entry <paramref name="credentialId"/>.</summary>
+    public IReadOnlyList<string> TargetsUsing(string credentialId) =>
+        CredentialAssignments.Where(a => a.Value == credentialId).Select(a => a.Key).ToList();
+
     /// <summary>GitHub "owner/repo" used by the updater to find releases.</summary>
     public string UpdateRepository { get; set; } = "3AISolutions/3ai.solutions.SolutionDeployer";
 
@@ -108,6 +174,9 @@ public sealed class AppSettings
     /// key lives in the OS credential store, never here.
     /// </summary>
     public SettingsAutoExport AutoExport { get; set; } = new();
+
+    /// <summary>Show source paths and target addresses in the list (the toolbar's Paths toggle).</summary>
+    public bool ShowPaths { get; set; } = true;
 
     // --- Last window placement (restored on startup). Null until first saved. ---
     public double? WindowWidth { get; set; }

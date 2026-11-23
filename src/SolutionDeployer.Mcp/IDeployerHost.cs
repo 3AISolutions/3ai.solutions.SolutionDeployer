@@ -40,6 +40,10 @@ public sealed record DeployerSnapshot(
 
 public sealed record SourceInfo(string Name, string Path, string Kind, string? Problem, IReadOnlyList<TargetInfo> Targets);
 
+/// <param name="CredentialsReady">
+/// False when the target needs a password and the app holds none for it: neither its own (saved, or typed this session)
+/// nor that of the library credential it uses.
+/// </param>
 public sealed record TargetInfo(
     string Id,
     string Kind,
@@ -53,6 +57,7 @@ public sealed record TargetInfo(
     bool SupportsBackup,
     string? Problem,
     string? LastStatus,
-    string? LastResult);
+    string? LastResult,
+    IReadOnlyList<string> Tags);
 
 public sealed record BackupInfo(string Id, long Sequence, DateTimeOffset CreatedUtc, string Kind, bool IsPartial, string Description, string? Source);

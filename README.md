@@ -86,7 +86,7 @@ dotnet test  3ai.solutions.SolutionDeployer.slnx
 dotnet run --project src/SolutionDeployer.App
 ```
 
-Requires the **.NET 10 SDK**.
+Requires the **.NET 11 SDK**.
 
 ## Configuring updates
 

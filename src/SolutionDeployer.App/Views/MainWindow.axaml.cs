@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -97,32 +98,57 @@ public partial class MainWindow : Window
             DispatcherPriority.Background);
     }
 
-    private async void OnCopyClaudeCodeCommandClick(object? sender, RoutedEventArgs e)
+    private async void OnRecentMenuClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm && Clipboard is not null)
-        {
-            await Clipboard.SetTextAsync(vm.ClaudeCodeCommand);
-            vm.StatusMessage = "Copied the Claude Code command (it contains the access token: share it only with yourself).";
-        }
-    }
-
-    private async void OnCopyClaudeDesktopConfigClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainWindowViewModel vm && Clipboard is not null)
-        {
-            await Clipboard.SetTextAsync(vm.ClaudeDesktopConfig);
-            vm.StatusMessage = "Copied the Claude Desktop config: merge it into claude_desktop_config.json and restart Claude.";
-        }
-    }
-
-    private async void OnRecentSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
+        // Raised by File › Recent's generated items (their DataContext is the path) and bubbled to the submenu.
         if (DataContext is MainWindowViewModel vm &&
-            sender is ComboBox { SelectedItem: string path } combo)
+            e.Source is MenuItem { DataContext: string path } item && !ReferenceEquals(item, sender))
         {
-            combo.SelectedItem = null;
+            e.Handled = true;
             await vm.OpenRecentCommand.ExecuteAsync(path);
         }
+    }
+
+    private bool _optionsOpen;
+
+    private async void OnOptionsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || _optionsOpen || !IsVisible)
+            return;
+
+        _optionsOpen = true;
+        OptionsFollowUp followUp;
+        try
+        {
+            followUp = await new OptionsWindow { DataContext = vm }.ShowDialog<OptionsFollowUp>(this);
+        }
+        finally
+        {
+            _optionsOpen = false;
+        }
+
+        // The backup windows are owned by this window, so they open once Options has closed.
+        switch (followUp)
+        {
+            case OptionsFollowUp.BackupDestinations:
+                await vm.ManageBackupTargetsCommand.ExecuteAsync(null);
+                break;
+            case OptionsFollowUp.ManageBackups when vm.ManageBackupsCommand.CanExecute(null):
+                await vm.ManageBackupsCommand.ExecuteAsync(null);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// File › Exit quits for real, like the tray's Quit: a shutdown closes the window with
+    /// <see cref="WindowCloseReason.ApplicationShutdown"/>, which <see cref="OnClosing"/> doesn't turn into hiding to the tray.
+    /// </summary>
+    private void OnExitClick(object? sender, RoutedEventArgs e)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown();
+        else
+            Close();
     }
 
     // ---- Row "⋯" menus (sources and scripts). Items that act through the window's view model
@@ -151,6 +177,12 @@ public partial class MainWindow : Window
             await vm.RemoveSourceCommand.ExecuteAsync(source);
     }
 
+    private async void OnReleaseSummaryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ProfileViewModel profile)
+            await vm.ReleaseSummaryCommand.ExecuteAsync(profile);
+    }
+
     private async void OnEditScriptClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
@@ -161,5 +193,33 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
             await vm.RemoveScriptCommand.ExecuteAsync(script);
+    }
+
+    private async void OnEditTagsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || _menuRow is not BackupHostViewModel row ||
+            row is not ITaggedTarget target)
+            return;
+
+        var editor = new TagEditorViewModel(row.Name, target.Tags, vm.KnownTags);
+        var window = new TagEditorWindow { DataContext = editor };
+        editor.CloseRequested += window.Close;
+        await window.ShowDialog(this);
+
+        if (editor.Result is { } tags)
+            vm.SetTargetTags(target, tags);
+    }
+
+    private async void OnCredentialsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ICredentialTarget target)
+            await vm.EditCredentialsCommand.ExecuteAsync(target);
+    }
+
+    /// <summary>A row's own "Set password" button (not in a menu, so the row is its data context).</summary>
+    private async void OnRowCredentialsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && (sender as Control)?.DataContext is ICredentialTarget target)
+            await vm.EditCredentialsCommand.ExecuteAsync(target);
     }
 }

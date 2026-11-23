@@ -59,13 +59,16 @@ public static class SettingsTransfer
 
     /// <summary>
     /// The credential-store keys of the passwords these settings refer to: profiles (by file path) and scripts
-    /// with a remembered user, deploy history or backup destination, and the S3 destinations' secret keys. This
-    /// machine's own secrets (the MCP token, the automatic-export password) are never among them.
+    /// with a remembered user, deploy history, backup destination or library reference, the credential library's
+    /// entries, and the S3 destinations' secret keys. This machine's own secrets (the MCP token, the
+    /// automatic-export password) are never among them.
     /// </summary>
     public static IReadOnlySet<string> SecretKeys(AppSettings settings)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
         keys.UnionWith(settings.RememberedUserNames.Keys);
+        keys.UnionWith(settings.CredentialAssignments.Keys);
+        keys.UnionWith(settings.Credentials.Select(c => c.PasswordKey));
         keys.UnionWith(settings.DeployHistory.Keys);
         keys.UnionWith(settings.ProfileBackupTarget.Keys);
         keys.UnionWith(settings.ScriptTargets.Values.SelectMany(list => list).Select(t => t.CredentialKey));
@@ -204,6 +207,14 @@ public static class SettingsTransfer
         {
             throw new InvalidDataException($"The exported settings can't be read: {ex.Message}", ex);
         }
+
+        // An export made before the credential library existed has neither list.
+        settings.Credentials ??= [];
+        settings.CredentialAssignments ??= new();
+
+        // A reference to a library entry the file doesn't contain would only fall back to the target's own credentials.
+        foreach (var dangling in settings.CredentialAssignments.Where(a => settings.FindCredential(a.Value) is null).ToList())
+            settings.CredentialAssignments.Remove(dangling.Key);
 
         // A file can't plant secrets under keys these settings don't use (the MCP token, say).
         var allowed = SecretKeys(settings);

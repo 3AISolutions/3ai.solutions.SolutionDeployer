@@ -94,8 +94,8 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
             yield return new TargetInfo(
                 IdOf(profile), "profile", profile.Name, project.Name,
                 profile.Profile.WebPublishMethod, profile.EngineLabel, NullIfEmpty(profile.Target),
-                profile.RequiresCredentials, !profile.RequiresCredentials || profile.Password.Length > 0,
-                profile.SupportsBackup, null, LastStatus(profile), NullIfEmpty(profile.ResultText));
+                profile.RequiresCredentials, profile.CredentialsReady,
+                profile.SupportsBackup, null, LastStatus(profile), NullIfEmpty(profile.ResultText), profile.Tags.ToList());
         }
 
         foreach (var script in project.ScriptTargets)
@@ -103,8 +103,8 @@ public sealed class McpDeployerBridge(MainWindowViewModel viewModel) : IDeployer
             yield return new TargetInfo(
                 IdOf(script), "script", script.Name, project.Name,
                 "Script", null, script.Summary,
-                script.RequiresCredentials, !script.RequiresCredentials || script.Password.Length > 0,
-                script.SupportsBackup, script.Problem, LastStatus(script), NullIfEmpty(script.ResultText));
+                script.RequiresCredentials, script.CredentialsReady,
+                script.SupportsBackup, script.Problem, LastStatus(script), NullIfEmpty(script.ResultText), script.Tags.ToList());
         }
     }
 

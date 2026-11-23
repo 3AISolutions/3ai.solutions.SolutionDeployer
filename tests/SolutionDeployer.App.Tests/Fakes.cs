@@ -154,3 +154,34 @@ public sealed class FakeSettingsBackup : ISettingsBackupService
     public Task<RestoredSettings?> ShowAsync(SolutionDeployer.Core.Configuration.AppSettings settings, bool canRestore) =>
         Task.FromResult<RestoredSettings?>(null);
 }
+
+/// <summary>
+/// Snapshots-window stub: instead of opening a window it runs <see cref="OnShow"/> as "the user", answering
+/// delete confirmations from <see cref="ConfirmAnswers"/> (true when empty) and recording what was asked.
+/// </summary>
+public sealed class FakeSnapshots : ISnapshotsService
+{
+    public Func<SolutionDeployer.App.ViewModels.SnapshotsViewModel, Task>? OnShow { get; set; }
+
+    public SolutionDeployer.App.ViewModels.SnapshotsViewModel? Last { get; private set; }
+
+    public bool Closed { get; private set; }
+
+    public Queue<bool> ConfirmAnswers { get; } = new();
+
+    public List<string> Asked { get; } = [];
+
+    public async Task ShowAsync(SolutionDeployer.App.ViewModels.SnapshotsViewModel snapshots)
+    {
+        Last = snapshots;
+        Closed = false;
+        snapshots.CloseRequested += () => Closed = true;
+        snapshots.Confirm = (_, message, _) =>
+        {
+            Asked.Add(message);
+            return Task.FromResult(ConfirmAnswers.Count == 0 || ConfirmAnswers.Dequeue());
+        };
+        if (OnShow is not null)
+            await OnShow(snapshots);
+    }
+}

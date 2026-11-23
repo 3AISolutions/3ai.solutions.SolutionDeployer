@@ -69,6 +69,34 @@ public sealed class McpServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Lists_targets_that_have_every_given_tag()
+    {
+        await using var client = await ConnectAsync();
+
+        var result = await client.CallToolAsync("list_targets", new Dictionary<string, object?> { ["tags"] = new[] { "PROD", "eu" } });
+
+        Assert.NotEqual(true, result.IsError);
+        var targets = JsonDocument.Parse(Text(result)).RootElement.GetProperty("sources")[0].GetProperty("targets");
+        var target = Assert.Single(targets.EnumerateArray());
+        Assert.Equal("profile-prod", target.GetProperty("id").GetString());
+        Assert.Equal(["prod", "EU"], target.GetProperty("tags").EnumerateArray().Select(t => t.GetString()));
+    }
+
+    [Fact]
+    public async Task Tags_and_text_filter_must_both_match()
+    {
+        await using var client = await ConnectAsync();
+
+        var result = await client.CallToolAsync("list_targets",
+            new Dictionary<string, object?> { ["filter"] = "us", ["tags"] = new[] { "prod" } });
+
+        var json = Text(result);
+        Assert.Contains("profile-prod-us", json);
+        Assert.DoesNotContain("\"profile-prod\"", json);
+        Assert.DoesNotContain("profile-staging", json);
+    }
+
+    [Fact]
     public async Task Deploy_starts_a_run_that_get_run_follows_to_the_end()
     {
         await using var client = await ConnectAsync();
@@ -122,14 +150,15 @@ public sealed class McpServerTests : IAsyncLifetime
             [
                 new SourceInfo("Shop.slnx", @"C:\src\Shop.slnx", "solution", null,
                 [
-                    Target("profile-prod", "Prod"),
-                    Target("profile-staging", "Staging"),
+                    Target("profile-prod", "Prod", "prod", "EU"),
+                    Target("profile-staging", "Staging", "staging", "eu"),
+                    Target("profile-prod-us", "Prod US", "prod", "US"),
                 ]),
             ]));
 
-        private static TargetInfo Target(string id, string name) =>
+        private static TargetInfo Target(string id, string name, params string[] tags) =>
             new(id, "profile", name, "Web", "MSDeploy", "dotnet", $"https://{name.ToLowerInvariant()}:8172/msdeploy.axd",
-                true, true, true, null, null, null);
+                true, true, true, null, null, null, tags);
 
         public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 

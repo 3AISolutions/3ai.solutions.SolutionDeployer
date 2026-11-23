@@ -35,6 +35,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IAutoStartService _autoStart;
     private readonly IMcpServerService _mcpServer;
     private readonly ISettingsBackupService _settingsBackup;
+    private readonly ISnapshotsService _snapshots;
+    private readonly ICredentialsDialogService? _credentialsDialog;
     private AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -61,7 +63,9 @@ public partial class MainWindowViewModel : ObservableObject
         IBackupManagerService backupManager,
         IAutoStartService autoStart,
         IMcpServerService mcpServer,
-        ISettingsBackupService settingsBackup)
+        ISettingsBackupService settingsBackup,
+        ISnapshotsService snapshots,
+        ICredentialsDialogService? credentialsDialog = null)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -83,10 +87,13 @@ public partial class MainWindowViewModel : ObservableObject
         _autoStart = autoStart;
         _mcpServer = mcpServer;
         _settingsBackup = settingsBackup;
+        _snapshots = snapshots;
+        _credentialsDialog = credentialsDialog;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
         _runInParallel = _settings.RunInParallel;
+        _showPaths = _settings.ShowPaths;
         _backupBeforePublish = _settings.BackupBeforePublish;
         _deployBackupPreview = _settings.DeployBackupPreview;
         _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
@@ -97,6 +104,7 @@ public partial class MainWindowViewModel : ObservableObject
         _mcpServerEnabled = _settings.McpServerEnabled;
         _mcpStatus = mcpServer.StatusText;
         mcpServer.StatusChanged += () => Dispatcher.UIThread.Post(() => McpStatus = _mcpServer.StatusText);
+        Sources.CollectionChanged += (_, _) => OnTargetTagsChanged();
         SyncRecent();
     }
 
@@ -108,16 +116,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isRunning;
 
@@ -138,6 +142,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _restoreSourcesOnStartup;
+
+    /// <summary>Show source paths and target addresses in the list; remembered in settings.</summary>
+    [ObservableProperty]
+    private bool _showPaths;
+
+    partial void OnShowPathsChanged(bool value)
+    {
+        _settings.ShowPaths = value;
+        _settingsStore.Save(_settings);
+    }
+
+    [RelayCommand]
+    private void TogglePaths() => ShowPaths = !ShowPaths;
 
     /// <summary>Free-text filter applied to the sources/projects/profiles/scripts tree.</summary>
     [ObservableProperty]
@@ -445,12 +462,10 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Builds a script row with its remembered credentials and backup state.</summary>
     private ScriptTargetViewModel CreateScriptViewModel(ProjectViewModel project, ScriptTarget script)
     {
-        var credentialsAvailable = _credentialStore.IsAvailable;
-        _settings.RememberedUserNames.TryGetValue(script.CredentialKey, out var rememberedUser);
-        var rememberedPassword = credentialsAvailable ? _credentialStore.Get(script.CredentialKey) : null;
-
-        var scriptVm = new ScriptTargetViewModel(project, script, rememberedUser, rememberedPassword, credentialsAvailable);
+        var scriptVm = new ScriptTargetViewModel(project, script, credentialStoreAvailable: _credentialStore.IsAvailable);
+        LoadCredentials(scriptVm);
         scriptVm.BackupDestinationChanged += OnBackupDestinationChanged;
+        scriptVm.Tags.Replace(_settings.GetTargetTags(scriptVm.TagKey));
         ConfigureBackup(scriptVm);
         return scriptVm;
     }
@@ -472,12 +487,12 @@ public partial class MainWindowViewModel : ObservableObject
         var project = script.Parent;
         project.ScriptTargets.Remove(script);
         project.NotifyScriptsChanged();
-        _settings.RememberedUserNames.Remove(script.Target.CredentialKey);
-        if (_credentialStore.IsAvailable)
-            _credentialStore.Delete(script.Target.CredentialKey);
+        TargetCredentials.Forget(_settings, _credentialStore, script.Target.CredentialKey);
+        _settings.TargetTags.Remove(script.TagKey);
         PersistScriptTargets(project);
         OnPropertyChanged(nameof(SelectedCount));
         SaveCurrentSelection();
+        OnTargetTagsChanged();
         StatusMessage = $"Removed script '{script.Name}'.";
     }
 
@@ -533,11 +548,11 @@ public partial class MainWindowViewModel : ObservableObject
                 projectVm.SelectionChanged += OnProjectSelectionChanged;
                 foreach (var profile in project.Profiles)
                 {
-                    _settings.RememberedUserNames.TryGetValue(profile.FilePath, out var rememberedUser);
-                    var rememberedPassword = credentialsAvailable ? _credentialStore.Get(profile.FilePath) : null;
                     var profileVm = new ProfileViewModel(
-                        projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
+                        projectVm, profile, _settings.DefaultEngine, null, null, credentialsAvailable);
+                    LoadCredentials(profileVm);
                     profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
+                    profileVm.Tags.Replace(_settings.GetTargetTags(profileVm.TagKey));
                     ConfigureBackup(profileVm);
                     projectVm.Profiles.Add(profileVm);
                 }
@@ -656,20 +671,21 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
+    /// <summary>Ticks every target the filters leave visible (hidden ones keep their state).</summary>
     [RelayCommand]
-    private void SelectAll() => SetAllSelected(true);
+    private void SelectAll() => SetAllSelected(true, visibleOnly: true);
 
     [RelayCommand]
-    private void ClearSelection() => SetAllSelected(false);
+    private void ClearSelection() => SetAllSelected(false, visibleOnly: false);
 
-    private void SetAllSelected(bool value)
+    private void SetAllSelected(bool value, bool visibleOnly)
     {
         _applyingState = true;
         foreach (var project in Sources.SelectMany(s => s.Projects))
         {
-            foreach (var profile in project.Profiles)
+            foreach (var profile in project.Profiles.Where(p => !visibleOnly || p.IsVisible))
                 profile.IsSelected = value;
-            foreach (var script in project.ScriptTargets)
+            foreach (var script in project.ScriptTargets.Where(s => !visibleOnly || s.IsVisible))
                 script.IsSelected = value;
         }
         _applyingState = false;
@@ -681,14 +697,18 @@ public partial class MainWindowViewModel : ObservableObject
     // ---- Filtering --------------------------------------------------------
 
     /// <summary>
-    /// Applies <see cref="FilterText"/> across the tree: an item stays visible if it (or a relevant
-    /// ancestor/descendant) matches. Matching parents expand so results are visible.
+    /// Applies <see cref="FilterText"/> and the tag filter across the tree: a target stays visible if its text
+    /// (or a relevant ancestor's) matches AND it has every ticked tag. Matching parents expand so results are visible.
     /// </summary>
     private void ApplyFilter()
     {
         var filter = FilterText?.Trim() ?? string.Empty;
-        var noFilter = filter.Length == 0;
+        var noText = filter.Length == 0;
+        var tags = SelectedFilterTags;
+        var noTags = tags.Count == 0;
+        var noFilter = noText && noTags;
         bool Match(string? text) => text is not null && text.Contains(filter, StringComparison.OrdinalIgnoreCase);
+        bool HasTags(ITaggedTarget target) => tags.All(target.Tags.ContainsTag);
 
         foreach (var source in Sources)
         {
@@ -702,27 +722,119 @@ public partial class MainWindowViewModel : ObservableObject
 
                 foreach (var profile in project.Profiles)
                 {
-                    profile.IsVisible = noFilter || projectMatch ||
-                        Match(profile.Name) || Match(profile.Target) || Match(profile.Method);
+                    profile.IsVisible = (noText || projectMatch ||
+                        Match(profile.Name) || Match(profile.Target) || Match(profile.Method)) && HasTags(profile);
                     anyChildVisible |= profile.IsVisible;
                 }
 
                 foreach (var script in project.ScriptTargets)
                 {
-                    script.IsVisible = noFilter || projectMatch || Match(script.Name) || Match(script.ScriptPath);
+                    script.IsVisible = (noText || projectMatch || Match(script.Name) || Match(script.ScriptPath)) &&
+                                       HasTags(script);
                     anyChildVisible |= script.IsVisible;
                 }
 
-                project.IsVisible = noFilter || projectMatch || anyChildVisible;
+                // Under a tag filter a project only shows for its matching targets.
+                project.IsVisible = noFilter || (projectMatch && noTags) || anyChildVisible;
                 if (!noFilter && project.IsVisible)
                     project.IsExpanded = true;
                 anyProjectVisible |= project.IsVisible;
             }
 
-            source.IsVisible = noFilter || sourceMatch || anyProjectVisible;
+            source.IsVisible = noFilter || (sourceMatch && noTags) || anyProjectVisible;
             if (!noFilter && source.IsVisible)
                 source.IsExpanded = true;
         }
+    }
+
+    // ---- Tags -------------------------------------------------------------
+
+    private readonly HashSet<string> _filterTags = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The list's tag filter: every tag on a loaded target (plus any still ticked), sorted.</summary>
+    public ObservableCollection<TagFilterOption> TagFilterOptions { get; } = [];
+
+    public bool HasTagFilterOptions => TagFilterOptions.Count > 0;
+
+    public bool IsTagFilterActive => _filterTags.Count > 0;
+
+    /// <summary>The tag filter button's caption, e.g. "Tags" or "Tags: prod, eu".</summary>
+    public string TagFilterLabel => _filterTags.Count == 0
+        ? "Tags"
+        : "Tags: " + string.Join(", ", TagFilterOptions.Where(o => o.IsSelected).Select(o => o.Tag));
+
+    /// <summary>Every tag in use on any target, for the tag editor's suggestions.</summary>
+    public IReadOnlyList<string> KnownTags => _settings.AllTargetTags();
+
+    private IReadOnlyList<string> SelectedFilterTags => _filterTags.ToList();
+
+    private IEnumerable<ITaggedTarget> TaggedTargets => Sources.SelectMany(s => s.Projects)
+        .SelectMany(p => p.Profiles.Cast<ITaggedTarget>().Concat(p.ScriptTargets));
+
+    /// <summary>Replaces a target's tags (normalised), saves them and re-applies the filter.</summary>
+    public void SetTargetTags(ITaggedTarget target, IEnumerable<string> tags)
+    {
+        _settings.SetTargetTags(target.TagKey, tags);
+        _settingsStore.Save(_settings);
+
+        // A project added both on its own and through a solution has two rows for the same target.
+        var saved = _settings.GetTargetTags(target.TagKey);
+        foreach (var row in TaggedTargets.Where(t => t.TagKey == target.TagKey).Append(target).Distinct())
+            row.Tags.Replace(saved);
+        OnTargetTagsChanged();
+    }
+
+    [RelayCommand]
+    private void ClearTagFilter()
+    {
+        _filterTags.Clear();
+        foreach (var option in TagFilterOptions)
+            option.IsSelected = false;
+        OnTagFilterChanged();
+    }
+
+    /// <summary>Rebuilds the tag filter's options after rows or their tags changed, keeping what is ticked.</summary>
+    private void OnTargetTagsChanged()
+    {
+        var tags = TaggedTargets.SelectMany(t => t.Tags).Concat(_filterTags)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!tags.SequenceEqual(TagFilterOptions.Select(o => o.Tag)))
+        {
+            foreach (var option in TagFilterOptions)
+                option.PropertyChanged -= OnTagFilterOptionChanged;
+            TagFilterOptions.Clear();
+            foreach (var tag in tags)
+            {
+                var option = new TagFilterOption(tag, _filterTags.Contains(tag));
+                option.PropertyChanged += OnTagFilterOptionChanged;
+                TagFilterOptions.Add(option);
+            }
+            OnPropertyChanged(nameof(HasTagFilterOptions));
+            OnPropertyChanged(nameof(TagFilterLabel));
+        }
+
+        if (FilterText.Length > 0 || IsTagFilterActive)
+            ApplyFilter();
+    }
+
+    private void OnTagFilterOptionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not TagFilterOption option || e.PropertyName != nameof(TagFilterOption.IsSelected))
+            return;
+
+        var changed = option.IsSelected ? _filterTags.Add(option.Tag) : _filterTags.Remove(option.Tag);
+        if (changed)
+            OnTagFilterChanged();
+    }
+
+    private void OnTagFilterChanged()
+    {
+        OnPropertyChanged(nameof(IsTagFilterActive));
+        OnPropertyChanged(nameof(TagFilterLabel));
+        ApplyFilter();
     }
 
     // ---- Deployment -------------------------------------------------------
@@ -767,24 +879,12 @@ public partial class MainWindowViewModel : ObservableObject
                 ConfirmBeforeDeploy = false; // persisted via OnConfirmBeforeDeployChanged
         }
 
-        // Remember what was typed for next time (the opt-in password goes to the OS secure store).
-        foreach (var profileVm in selectedProfiles)
+        // Credentials are saved from each row's Credentials dialog; ask for any password a target still lacks.
+        if (!await PromptForMissingPasswordsAsync(selectedProfiles.Cast<ICredentialTarget>().Concat(selectedScripts)))
         {
-            if (!string.IsNullOrWhiteSpace(profileVm.UserName))
-                _settings.RememberedUserNames[profileVm.Profile.FilePath] = profileVm.UserName;
-
-            PersistPassword(profileVm.Profile.FilePath, profileVm.RememberPassword, profileVm.Password);
+            StatusMessage = "Deployment cancelled: a target has no password.";
+            return;
         }
-
-        foreach (var scriptVm in selectedScripts.Where(s => s.RequiresCredentials))
-        {
-            if (!string.IsNullOrWhiteSpace(scriptVm.UserName))
-                _settings.RememberedUserNames[scriptVm.Target.CredentialKey] = scriptVm.UserName;
-
-            PersistPassword(scriptVm.Target.CredentialKey, scriptVm.RememberPassword, scriptVm.Password);
-        }
-
-        _settingsStore.Save(_settings);
 
         var summary = await RunDeploymentAsync(selectedProfiles, selectedScripts, RunInParallel, BackupBeforePublish, observer: null);
         if (summary is not null)
@@ -987,7 +1087,6 @@ public partial class MainWindowViewModel : ObservableObject
         if (!host.SupportsBackup)
         {
             host.SetBackups([]);
-            host.ShowBackups = false;
             return;
         }
 
@@ -997,30 +1096,69 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// Repopulates a row's snapshot list from its configured destination. Best-effort: a remote (S3)
-    /// listing may fail or be slow, so callers fire-and-forget and errors surface in the badge.
+    /// listing may fail or be slow, so callers fire-and-forget and errors surface in the Snapshots window.
     /// </summary>
     private async Task LoadBackupsAsync(BackupHostViewModel host)
     {
         if (!host.SupportsBackup)
             return;
 
+        var generation = host.BeginLoadingBackups();
         try
         {
             var backups = await _backupService.ListAsync(host.BackupOwner);
+            if (!host.EndLoadingBackups(generation))
+                return; // the store changed while listing; the newer listing fills the list
+            host.BackupsError = null;
             host.SetBackups(backups.Select(b => new BackupEntryViewModel(host, b)));
         }
         catch (Exception ex)
         {
+            if (!host.EndLoadingBackups(generation))
+                return;
+            host.BackupsError = $"Could not list snapshots: {ex.Message}";
             host.SetBackups([]);
             StatusMessage = $"Could not list snapshots for {host.Name}: {ex.Message}";
         }
     }
 
+    /// <summary>Re-reads a row's snapshot list (the Snapshots window's Refresh).</summary>
+    public Task ReloadBackupsAsync(BackupHostViewModel host) => LoadBackupsAsync(host);
+
+    /// <summary>Snapshots can be restored or deleted: no deploy or restore is running and sources are loaded.</summary>
+    public bool CanChangeSnapshots => CanDeploy();
+
+    /// <summary>
+    /// Opens a row's Snapshots window. Restoring from it closes the window, then runs here like any restore, so the
+    /// log and the row's status dot follow it.
+    /// </summary>
     [RelayCommand]
-    private async Task RefreshBackupsAsync(BackupHostViewModel? host)
+    private async Task ShowSnapshotsAsync(BackupHostViewModel? host)
     {
-        if (host is not null)
-            await LoadBackupsAsync(host);
+        if (host is null || !host.SupportsBackup)
+            return;
+
+        var snapshots = new SnapshotsViewModel(host, this);
+        try
+        {
+            await _snapshots.ShowAsync(snapshots);
+        }
+        finally
+        {
+            snapshots.Detach();
+        }
+
+        if (snapshots.RestoreRequested is not { } entry)
+            return;
+
+        // Something (e.g. an MCP deploy) may have started while the window was open.
+        if (!CanDeploy())
+        {
+            StatusMessage = "Not restored: a deploy or restore started meanwhile. Try again once it has finished.";
+            return;
+        }
+
+        await RunRestoreAsync(entry.Parent, entry.Backup, observer: null);
     }
 
     private List<BackupDestinationOption> BuildDestinationOptions()
@@ -1141,6 +1279,7 @@ public partial class MainWindowViewModel : ObservableObject
         DeployBackupPreview = _settings.DeployBackupPreview;
         ConfirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
         RestoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
+        ShowPaths = _settings.ShowPaths;
         CloseToTray = _settings.CloseToTray;
         UpdateRepository = _settings.UpdateRepository;
         SyncRecent();
@@ -1162,13 +1301,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return savedSecrets;
-    }
-
-    [RelayCommand(CanExecute = nameof(CanDeploy))]
-    private async Task RestoreAsync(BackupEntryViewModel? entry)
-    {
-        if (entry is not null)
-            await RunRestoreAsync(entry.Parent, entry.Backup, observer: null);
     }
 
     /// <summary>Restores a row's snapshot. Sets <see cref="IsRunning"/> before its first await.</summary>
@@ -1255,12 +1387,12 @@ public partial class MainWindowViewModel : ObservableObject
         var profiles = targets.OfType<ProfileViewModel>().ToList();
         var scripts = targets.OfType<ScriptTargetViewModel>().ToList();
 
-        var missingPasswords = profiles.Where(p => p.RequiresCredentials && string.IsNullOrEmpty(p.Password)).Select(p => p.Name)
-            .Concat(scripts.Where(s => s.RequiresCredentials && string.IsNullOrEmpty(s.Password)).Select(s => s.Name))
+        var missingPasswords = profiles.Where(p => !p.CredentialsReady).Select(p => p.Name)
+            .Concat(scripts.Where(s => !s.CredentialsReady).Select(s => s.Name))
             .ToList();
         if (missingPasswords.Count > 0)
-            return $"No saved password for {string.Join(", ", missingPasswords)}. Enter it in the app and tick " +
-                   "'Remember' (passwords are never sent over MCP).";
+            return $"No saved password for {string.Join(", ", missingPasswords)}. Set it in the app (the row's ⋯ menu → " +
+                   "Credentials…) and tick 'Remember', or pick a saved credential (passwords are never sent over MCP).";
 
         if (scripts.FirstOrDefault(s => s.HasProblem) is { } broken)
             return $"Script '{broken.Name}' can't run: {broken.Problem}";
@@ -1300,13 +1432,15 @@ public partial class MainWindowViewModel : ObservableObject
         return summary.ToPlainText();
     }
 
-    [RelayCommand(CanExecute = nameof(CanDeploy))]
-    private async Task DeleteBackupAsync(BackupEntryViewModel? entry)
+    /// <summary>
+    /// Deletes a snapshot from the Snapshots window, together with the older partial snapshots that need it (after
+    /// <paramref name="confirm"/> agrees, when there are any). Returns what happened, for the window.
+    /// </summary>
+    public async Task<string> DeleteBackupAsync(BackupEntryViewModel entry, Func<string, string, string, Task<bool>> confirm)
     {
-        if (entry is null)
-            return;
-
         var host = entry.Parent;
+        if (!CanDeploy())
+            return "Not deleted: a deploy or restore is running. Try again once it has finished.";
 
         // Older partial snapshots can't be restored without this one, so they have to go with it.
         IReadOnlyList<DeploymentBackup> deletionSet;
@@ -1316,20 +1450,19 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Could not delete that snapshot: {ex.Message}";
-            return;
+            return StatusMessage = $"Could not delete that snapshot: {ex.Message}";
         }
 
         if (deletionSet.Count > 1)
         {
             var older = deletionSet.Where(b => b.Id != entry.Backup.Id).Select(b => $"#{b.Sequence}");
-            var confirmed = await _confirmationService.ConfirmActionAsync(
+            var confirmed = await confirm(
                 "Delete snapshots",
                 $"Snapshot #{entry.Backup.Sequence} of {host.Name} only records what its deploy changed, and every older " +
                 $"snapshot of this kind needs it to be restored. Deleting it also deletes {string.Join(", ", older)}.",
                 $"Delete {deletionSet.Count} snapshots");
             if (!confirmed)
-                return;
+                return "Nothing deleted.";
         }
 
         if (await _backupService.DeleteAsync(entry.Backup))
@@ -1345,7 +1478,9 @@ public partial class MainWindowViewModel : ObservableObject
             StatusMessage = "Could not delete that snapshot.";
         }
 
+        var outcome = StatusMessage;
         await LoadBackupsAsync(host);
+        return outcome;
     }
 
     // ---- Release summary (git history) ------------------------------------
@@ -1425,16 +1560,136 @@ public partial class MainWindowViewModel : ObservableObject
             Log.RemoveAt(0);
     }
 
-    /// <summary>Saves or clears a profile's/script's password in the OS secure store based on its opt-in flag.</summary>
-    private void PersistPassword(string key, bool remember, string password)
-    {
-        if (!_credentialStore.IsAvailable)
-            return;
+    // ---- Credentials ------------------------------------------------------
 
-        if (remember && !string.IsNullOrEmpty(password))
-            _credentialStore.Set(key, password);
-        else
-            _credentialStore.Delete(key);
+    /// <summary>Gives a row the credentials its settings point at (a library entry or its own).</summary>
+    private void LoadCredentials(ICredentialTarget target)
+    {
+        var resolved = TargetCredentials.Resolve(_settings, _credentialStore, target.CredentialKey, target.DefaultUserName);
+        target.ApplyCredentials(resolved, rememberPassword: resolved.HasSavedPassword);
+    }
+
+    /// <summary>
+    /// Re-reads every row's credentials after the library changed. A row with its own password typed for this
+    /// session only (not saved) keeps it.
+    /// </summary>
+    private void RefreshAllCredentials()
+    {
+        foreach (var target in AllCredentialTargets())
+        {
+            var sessionPassword = target.CredentialEntry is null && !target.RememberPassword ? target.Password : null;
+            var resolved = TargetCredentials.Resolve(_settings, _credentialStore, target.CredentialKey, target.DefaultUserName);
+            if (resolved is { Source: CredentialSource.Own, HasSavedPassword: false } && !string.IsNullOrEmpty(sessionPassword))
+                target.ApplyCredentials(resolved with { Password = sessionPassword }, rememberPassword: false);
+            else
+                target.ApplyCredentials(resolved, rememberPassword: resolved.HasSavedPassword);
+        }
+    }
+
+    private IEnumerable<ICredentialTarget> AllCredentialTargets() =>
+        Sources.SelectMany(s => s.Projects)
+            .SelectMany(p => p.Profiles.Cast<ICredentialTarget>().Concat(p.ScriptTargets));
+
+    /// <summary>A target's display name from its credential key, for the library's "used by" lists.</summary>
+    private string DescribeCredentialTarget(string key)
+    {
+        switch (AllCredentialTargets().FirstOrDefault(t => t.CredentialKey == key))
+        {
+            case ProfileViewModel profile:
+                return $"{profile.Parent.Name} → {profile.Name}";
+            case ScriptTargetViewModel script:
+                return $"{script.Parent.Name} → {script.Name}";
+        }
+
+        if (_settings.ScriptTargets.Values.SelectMany(list => list).FirstOrDefault(t => t.CredentialKey == key) is { } saved)
+            return $"{saved.Name} (script)";
+
+        return Path.IsPathRooted(key) ? Path.GetFileNameWithoutExtension(key) : key;
+    }
+
+    /// <summary>Opens a row's Credentials dialog (⋯ → Credentials…).</summary>
+    [RelayCommand]
+    private Task EditCredentialsAsync(ICredentialTarget? target) =>
+        target is null ? Task.CompletedTask : EditCredentialsCoreAsync(target, prompt: null);
+
+    private async Task<bool> EditCredentialsCoreAsync(ICredentialTarget target, string? prompt)
+    {
+        if (_credentialsDialog is null)
+            return false;
+
+        var request = target switch
+        {
+            ProfileViewModel p => new CredentialsDialogRequest(
+                p, $"Publish profile · {p.Parent.Name}", DescribeConnection(p), p.Profile, null, null, prompt),
+            ScriptTargetViewModel s => new CredentialsDialogRequest(
+                s, $"Script · {s.Parent.Name}", DescribeConnection(s), null, s.Target, s.Parent.ProjectDirectory, prompt),
+            _ => throw new ArgumentException("Unknown target.", nameof(target)),
+        };
+
+        var result = await _credentialsDialog.EditAsync(_settings, request, DescribeCredentialTarget);
+        if (result.LibraryChanged)
+            RefreshAllCredentials();
+        if (result.Saved)
+            StatusMessage = $"Saved the credentials for {target.Name}.";
+        return result.Saved;
+    }
+
+    /// <summary>Opens the credential library manager.</summary>
+    [RelayCommand]
+    private async Task ManageCredentialsAsync()
+    {
+        if (_credentialsDialog is not null && await _credentialsDialog.ShowLibraryAsync(_settings, DescribeCredentialTarget))
+            RefreshAllCredentials();
+    }
+
+    /// <summary>
+    /// Opens the Credentials dialog for each target that needs a password it doesn't have. False when the user
+    /// cancels one, or no dialog can be shown.
+    /// </summary>
+    private async Task<bool> PromptForMissingPasswordsAsync(IEnumerable<ICredentialTarget> targets)
+    {
+        foreach (var target in targets.Where(t => !t.CredentialsReady).ToList())
+        {
+            var saved = await EditCredentialsCoreAsync(target,
+                $"{target.Name} needs a password to deploy. Enter it (tick Remember to save it), or choose a saved credential.");
+            if (!saved || !target.CredentialsReady)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<ConnectionDetail> DescribeConnection(ProfileViewModel profile)
+    {
+        var p = profile.Profile;
+        var details = new List<ConnectionDetail>
+        {
+            new("Profile", Path.GetFileName(p.FilePath)),
+            new("Publish method", p.WebPublishMethod ?? "—"),
+        };
+        if (!string.IsNullOrWhiteSpace(p.ServerUrl))
+            details.Add(new("Server URL", p.ServerUrl));
+        if (!string.IsNullOrWhiteSpace(p.SiteName))
+            details.Add(new("Site", p.SiteName));
+        details.Add(new("User in profile", string.IsNullOrWhiteSpace(p.UserName) ? "(none)" : p.UserName));
+        return details;
+    }
+
+    private static IReadOnlyList<ConnectionDetail> DescribeConnection(ScriptTargetViewModel script)
+    {
+        var t = script.Target;
+        var details = new List<ConnectionDetail>
+        {
+            new("Script", t.ScriptPath),
+            new("Username variable",
+                string.IsNullOrWhiteSpace(t.UserNameVariable) ? ScriptTarget.DefaultUserNameVariable : t.UserNameVariable),
+            new("Password variable",
+                string.IsNullOrWhiteSpace(t.PasswordVariable) ? ScriptTarget.DefaultPasswordVariable : t.PasswordVariable),
+        };
+        if (t.BackupKind == ScriptBackupKind.WebDeploy && !string.IsNullOrWhiteSpace(t.BackupServerUrl))
+            details.Add(new("Web Deploy server", t.BackupServerUrl));
+        details.Add(new("Test command", string.IsNullOrWhiteSpace(t.TestCommand) ? "(none)" : t.TestCommand));
+        return details;
     }
 
     // ---- Startup ----------------------------------------------------------
