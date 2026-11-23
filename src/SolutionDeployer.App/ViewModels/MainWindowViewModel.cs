@@ -35,6 +35,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IAutoStartService _autoStart;
     private readonly IMcpServerService _mcpServer;
     private readonly ISettingsBackupService _settingsBackup;
+    private readonly ISnapshotsService _snapshots;
     private AppSettings _settings;
 
     private CancellationTokenSource? _runCts;
@@ -61,7 +62,8 @@ public partial class MainWindowViewModel : ObservableObject
         IBackupManagerService backupManager,
         IAutoStartService autoStart,
         IMcpServerService mcpServer,
-        ISettingsBackupService settingsBackup)
+        ISettingsBackupService settingsBackup,
+        ISnapshotsService snapshots)
     {
         _sourceLoader = sourceLoader;
         _deploymentRunner = deploymentRunner;
@@ -83,6 +85,7 @@ public partial class MainWindowViewModel : ObservableObject
         _autoStart = autoStart;
         _mcpServer = mcpServer;
         _settingsBackup = settingsBackup;
+        _snapshots = snapshots;
         _settings = settingsStore.Load();
         _settings.MigrateLegacy();
 
@@ -108,16 +111,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeployCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RestoreCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DeleteBackupCommand))]
     [NotifyCanExecuteChangedFor(nameof(ManageBackupsCommand))]
     private bool _isRunning;
 
@@ -987,7 +986,6 @@ public partial class MainWindowViewModel : ObservableObject
         if (!host.SupportsBackup)
         {
             host.SetBackups([]);
-            host.ShowBackups = false;
             return;
         }
 
@@ -997,30 +995,69 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// Repopulates a row's snapshot list from its configured destination. Best-effort: a remote (S3)
-    /// listing may fail or be slow, so callers fire-and-forget and errors surface in the badge.
+    /// listing may fail or be slow, so callers fire-and-forget and errors surface in the Snapshots window.
     /// </summary>
     private async Task LoadBackupsAsync(BackupHostViewModel host)
     {
         if (!host.SupportsBackup)
             return;
 
+        var generation = host.BeginLoadingBackups();
         try
         {
             var backups = await _backupService.ListAsync(host.BackupOwner);
+            if (!host.EndLoadingBackups(generation))
+                return; // the store changed while listing; the newer listing fills the list
+            host.BackupsError = null;
             host.SetBackups(backups.Select(b => new BackupEntryViewModel(host, b)));
         }
         catch (Exception ex)
         {
+            if (!host.EndLoadingBackups(generation))
+                return;
+            host.BackupsError = $"Could not list snapshots: {ex.Message}";
             host.SetBackups([]);
             StatusMessage = $"Could not list snapshots for {host.Name}: {ex.Message}";
         }
     }
 
+    /// <summary>Re-reads a row's snapshot list (the Snapshots window's Refresh).</summary>
+    public Task ReloadBackupsAsync(BackupHostViewModel host) => LoadBackupsAsync(host);
+
+    /// <summary>Snapshots can be restored or deleted: no deploy or restore is running and sources are loaded.</summary>
+    public bool CanChangeSnapshots => CanDeploy();
+
+    /// <summary>
+    /// Opens a row's Snapshots window. Restoring from it closes the window, then runs here like any restore, so the
+    /// log and the row's status dot follow it.
+    /// </summary>
     [RelayCommand]
-    private async Task RefreshBackupsAsync(BackupHostViewModel? host)
+    private async Task ShowSnapshotsAsync(BackupHostViewModel? host)
     {
-        if (host is not null)
-            await LoadBackupsAsync(host);
+        if (host is null || !host.SupportsBackup)
+            return;
+
+        var snapshots = new SnapshotsViewModel(host, this);
+        try
+        {
+            await _snapshots.ShowAsync(snapshots);
+        }
+        finally
+        {
+            snapshots.Detach();
+        }
+
+        if (snapshots.RestoreRequested is not { } entry)
+            return;
+
+        // Something (e.g. an MCP deploy) may have started while the window was open.
+        if (!CanDeploy())
+        {
+            StatusMessage = "Not restored: a deploy or restore started meanwhile. Try again once it has finished.";
+            return;
+        }
+
+        await RunRestoreAsync(entry.Parent, entry.Backup, observer: null);
     }
 
     private List<BackupDestinationOption> BuildDestinationOptions()
@@ -1164,13 +1201,6 @@ public partial class MainWindowViewModel : ObservableObject
         return savedSecrets;
     }
 
-    [RelayCommand(CanExecute = nameof(CanDeploy))]
-    private async Task RestoreAsync(BackupEntryViewModel? entry)
-    {
-        if (entry is not null)
-            await RunRestoreAsync(entry.Parent, entry.Backup, observer: null);
-    }
-
     /// <summary>Restores a row's snapshot. Sets <see cref="IsRunning"/> before its first await.</summary>
     private async Task RunRestoreAsync(BackupHostViewModel host, DeploymentBackup backup, IRunObserver? observer)
     {
@@ -1300,13 +1330,15 @@ public partial class MainWindowViewModel : ObservableObject
         return summary.ToPlainText();
     }
 
-    [RelayCommand(CanExecute = nameof(CanDeploy))]
-    private async Task DeleteBackupAsync(BackupEntryViewModel? entry)
+    /// <summary>
+    /// Deletes a snapshot from the Snapshots window, together with the older partial snapshots that need it (after
+    /// <paramref name="confirm"/> agrees, when there are any). Returns what happened, for the window.
+    /// </summary>
+    public async Task<string> DeleteBackupAsync(BackupEntryViewModel entry, Func<string, string, string, Task<bool>> confirm)
     {
-        if (entry is null)
-            return;
-
         var host = entry.Parent;
+        if (!CanDeploy())
+            return "Not deleted: a deploy or restore is running. Try again once it has finished.";
 
         // Older partial snapshots can't be restored without this one, so they have to go with it.
         IReadOnlyList<DeploymentBackup> deletionSet;
@@ -1316,20 +1348,19 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Could not delete that snapshot: {ex.Message}";
-            return;
+            return StatusMessage = $"Could not delete that snapshot: {ex.Message}";
         }
 
         if (deletionSet.Count > 1)
         {
             var older = deletionSet.Where(b => b.Id != entry.Backup.Id).Select(b => $"#{b.Sequence}");
-            var confirmed = await _confirmationService.ConfirmActionAsync(
+            var confirmed = await confirm(
                 "Delete snapshots",
                 $"Snapshot #{entry.Backup.Sequence} of {host.Name} only records what its deploy changed, and every older " +
                 $"snapshot of this kind needs it to be restored. Deleting it also deletes {string.Join(", ", older)}.",
                 $"Delete {deletionSet.Count} snapshots");
             if (!confirmed)
-                return;
+                return "Nothing deleted.";
         }
 
         if (await _backupService.DeleteAsync(entry.Backup))
@@ -1345,7 +1376,9 @@ public partial class MainWindowViewModel : ObservableObject
             StatusMessage = "Could not delete that snapshot.";
         }
 
+        var outcome = StatusMessage;
         await LoadBackupsAsync(host);
+        return outcome;
     }
 
     // ---- Release summary (git history) ------------------------------------

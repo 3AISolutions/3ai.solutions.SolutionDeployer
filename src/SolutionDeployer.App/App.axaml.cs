@@ -42,6 +42,7 @@ public partial class App : Application
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
             services.AddSingleton<IBackupManagerService, BackupManagerService>();
+            services.AddSingleton<ISnapshotsService, SnapshotsService>();
             services.AddSingleton<ISettingsBackupService, SettingsBackupService>();
             services.AddSingleton<IUpdatePromptService, UpdatePromptService>();
             services.AddSingleton<WhatsNewProvider>();

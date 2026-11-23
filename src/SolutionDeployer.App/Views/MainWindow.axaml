@@ -84,12 +84,6 @@
         <Style Selector="Border.row.selected:pointerover">
             <Setter Property="Background" Value="#332888FF" />
         </Style>
-        <Style Selector="Border.backups">
-            <Setter Property="Background" Value="#0D808080" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="8,6" />
-            <Setter Property="Margin" Value="0,6,0,0" />
-        </Style>
 
         <!-- Run status dot: hollow = waiting, pulsing blue = deploying, green / red / amber = result -->
         <Style Selector="Panel.status">
@@ -140,40 +134,6 @@
         <Thickness x:Key="ExpanderHeaderPadding">10,0,4,0</Thickness>
         <Thickness x:Key="ExpanderChevronMargin">6,0,6,0</Thickness>
         <Thickness x:Key="ExpanderContentPadding">6,4</Thickness>
-
-        <!-- Snapshot picker shared by profile and script rows. -->
-        <DataTemplate x:Key="BackupPanel" x:DataType="vm:BackupHostViewModel">
-            <Border Classes="backups">
-                <WrapPanel ItemSpacing="6" LineSpacing="4">
-                    <TextBlock Text="Store" Classes="meta" />
-                    <ComboBox Classes="small" ItemsSource="{Binding BackupDestinations}"
-                              SelectedItem="{Binding SelectedDestination, Mode=TwoWay}" MinWidth="120"
-                              ToolTip.Tip="Where this target's snapshots are stored (local disk or a configured remote)" />
-                    <TextBlock Text="Snapshot" Classes="meta" Margin="6,0,0,0" />
-                    <ComboBox Classes="small" ItemsSource="{Binding Backups}"
-                              SelectedItem="{Binding SelectedBackup, Mode=TwoWay}"
-                              MinWidth="200" PlaceholderText="No snapshots yet">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:BackupEntryViewModel">
-                                <TextBlock Text="{Binding DisplayName}" FontSize="11" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <Button Classes="small" Content="Restore" IsEnabled="{Binding HasBackups}"
-                            ToolTip.Tip="Roll the target back to how it was before the selected snapshot's deploy (a Web Deploy rollback also undoes every newer deploy)"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RestoreCommand}"
-                            CommandParameter="{Binding SelectedBackup}" />
-                    <Button Classes="small" Content="Delete" IsEnabled="{Binding HasBackups}"
-                            ToolTip.Tip="Delete the selected snapshot"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteBackupCommand}"
-                            CommandParameter="{Binding SelectedBackup}" />
-                    <Button Classes="small ghost" Content="↻"
-                            ToolTip.Tip="Refresh the snapshot list"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RefreshBackupsCommand}"
-                            CommandParameter="{Binding}" />
-                </WrapPanel>
-            </Border>
-        </DataTemplate>
     </Window.Resources>
 
     <Window.KeyBindings>
@@ -424,8 +384,9 @@
                                                                                                 CommandParameter="{Binding}" />
                                                                                         <Button Classes="small" Content="{Binding BackupBadge}"
                                                                                                 IsVisible="{Binding SupportsBackup}"
-                                                                                                ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
-                                                                                                Command="{Binding ToggleBackupsCommand}" />
+                                                                                                ToolTip.Tip="Saved deployment snapshots of this profile: restore or delete them"
+                                                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSnapshotsCommand}"
+                                                                                                CommandParameter="{Binding}" />
                                                                                         <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options">
                                                                                             <Button.Flyout>
                                                                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -466,10 +427,6 @@
                                                                                               IsVisible="{Binding CanRememberPassword}"
                                                                                               ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
                                                                                 </WrapPanel>
-
-                                                                                <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
-                                                                                                Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"
-                                                                                                IsVisible="{Binding ShowBackups}" />
                                                                             </Grid>
                                                                         </Border>
                                                                     </DataTemplate>
@@ -507,8 +464,9 @@
                                                                                     <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4">
                                                                                         <Button Classes="small" Content="{Binding BackupBadge}"
                                                                                                 IsVisible="{Binding SupportsBackup}"
-                                                                                                ToolTip.Tip="Show/hide saved snapshots of this script's target"
-                                                                                                Command="{Binding ToggleBackupsCommand}" />
+                                                                                                ToolTip.Tip="Saved snapshots of this script's target: restore or delete them"
+                                                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSnapshotsCommand}"
+                                                                                                CommandParameter="{Binding}" />
                                                                                         <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Script options"
                                                                                                 Click="OnRowMenuClick">
                                                                                             <Button.Flyout>
@@ -542,10 +500,6 @@
                                                                                               IsVisible="{Binding CanRememberPassword}"
                                                                                               ToolTip.Tip="Store this password in the OS secure store (Credential Manager / Keychain / libsecret)" />
                                                                                 </WrapPanel>
-
-                                                                                <ContentControl Grid.Row="2" Grid.Column="1" Margin="18,0,0,0"
-                                                                                                Content="{Binding}" ContentTemplate="{StaticResource BackupPanel}"
-                                                                                                IsVisible="{Binding ShowBackups}" />
                                                                             </Grid>
                                                                         </Border>
                                                                     </DataTemplate>
