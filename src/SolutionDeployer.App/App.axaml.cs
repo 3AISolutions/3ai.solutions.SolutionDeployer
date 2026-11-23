@@ -41,6 +41,7 @@ public partial class App : Application
             services.AddSingleton<IDeploySummaryService, DeploySummaryService>();
             services.AddSingleton<IReleaseSummaryService, ReleaseSummaryService>();
             services.AddSingleton<IRemoteTargetsService, RemoteTargetsService>();
+            services.AddSingleton<ICredentialsDialogService, CredentialsDialogService>();
             services.AddSingleton<IBackupManagerService, BackupManagerService>();
             services.AddSingleton<ISnapshotsService, SnapshotsService>();
             services.AddSingleton<ISettingsBackupService, SettingsBackupService>();

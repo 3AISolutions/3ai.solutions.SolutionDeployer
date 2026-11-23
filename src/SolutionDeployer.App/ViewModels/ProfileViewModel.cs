@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SolutionDeployer.Core.Backup;
+using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.ViewModels;
@@ -9,7 +10,7 @@ namespace SolutionDeployer.App.ViewModels;
 /// A selectable publish profile. Carries its own engine choice and (non-persisted) credentials so
 /// that any combination of profiles can be queued with per-target settings.
 /// </summary>
-public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, ITaggedTarget
+public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, ITaggedTarget, ICredentialTarget
 {
     public ProfileViewModel(
         ProjectViewModel parent,
@@ -29,9 +30,6 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, 
             _password = rememberedPassword;
             _rememberPassword = true;
         }
-
-        // A saved password means there's nothing to fill in, so keep the fields tucked away in the row menu.
-        _showCredentials = rememberedPassword is null;
     }
 
     public ProjectViewModel Parent { get; }
@@ -96,7 +94,7 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, 
     private string _userName = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary), nameof(CredentialsReady), nameof(NeedsPassword))]
     private string _password = string.Empty;
 
     [ObservableProperty]
@@ -106,18 +104,30 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, 
     [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
     private bool _rememberPassword;
 
-    /// <summary>Whether the username/password fields are expanded on the row.</summary>
+    /// <summary>The library entry this profile deploys with, or null for its own credentials.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CredentialsMenuText))]
-    private bool _showCredentials;
+    [NotifyPropertyChangedFor(nameof(CredentialsSummary))]
+    private SavedCredential? _credentialEntry;
 
-    public string CredentialsMenuText => ShowCredentials ? "Hide credentials" : "Edit credentials…";
+    public string CredentialKey => Profile.FilePath;
+
+    public string? DefaultUserName => Profile.UserName;
 
     /// <summary>Who the row deploys as, shown at the top of the row menu.</summary>
-    public string CredentialsSummary =>
-        string.IsNullOrWhiteSpace(UserName) ? "No username set"
-        : RememberPassword && !string.IsNullOrEmpty(Password) ? $"{UserName} (password saved)"
-        : UserName;
+    public string CredentialsSummary => CredentialText.Summarize(UserName, Password, RememberPassword, CredentialEntry);
+
+    public bool CredentialsReady => !RequiresCredentials || !string.IsNullOrEmpty(Password);
+
+    /// <summary>A credentialed profile without a password: the row offers to set one.</summary>
+    public bool NeedsPassword => !CredentialsReady;
+
+    public void ApplyCredentials(ResolvedCredentials credentials, bool rememberPassword)
+    {
+        CredentialEntry = credentials.Entry;
+        UserName = credentials.UserName;
+        Password = credentials.Password ?? string.Empty;
+        RememberPassword = rememberPassword && !string.IsNullOrEmpty(Password);
+    }
 
     public string EngineLabel => Engine == PublishEngineKind.MsBuild ? "MSBuild" : "dotnet";
 
@@ -132,9 +142,6 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, 
     public bool IsMsBuildEngine => Engine == PublishEngineKind.MsBuild;
 
     public bool CanUseDotnet => !Parent.RequiresMsBuild;
-
-    [RelayCommand]
-    private void ToggleCredentials() => ShowCredentials = !ShowCredentials;
 
     [RelayCommand]
     private void SetEngine(PublishEngineKind engine) => Engine = engine;

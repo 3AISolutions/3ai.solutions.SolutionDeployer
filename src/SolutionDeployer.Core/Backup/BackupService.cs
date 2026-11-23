@@ -1285,7 +1285,7 @@ public sealed class BackupService(
     /// WMSvc endpoints need the site scoped via <c>?site=</c>; add it when missing. Not for a physical
     /// path (e.g. <c>D:\Apps\Service</c>), which isn't inside a site.
     /// </summary>
-    private static string NormalizeComputerName(string serviceUrl, string contentPath)
+    internal static string NormalizeComputerName(string serviceUrl, string contentPath)
     {
         var isPhysicalPath = Path.IsPathRooted(contentPath) || contentPath.Contains(':');
         if (!isPhysicalPath &&

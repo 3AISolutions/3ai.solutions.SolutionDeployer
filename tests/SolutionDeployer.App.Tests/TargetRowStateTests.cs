@@ -1,4 +1,5 @@
 using SolutionDeployer.App.ViewModels;
+using SolutionDeployer.Core.Configuration;
 using SolutionDeployer.Core.Models;
 
 namespace SolutionDeployer.App.Tests;
@@ -22,27 +23,56 @@ public sealed class TargetRowStateTests : IDisposable
             FilePath = Path.Combine(_dir, "Prod.pubxml"),
             Format = PublishProfileFormat.PubXml,
             WebPublishMethod = "MSDeploy",
+            RequiresCredentials = true,
         };
         return new ProfileViewModel(project, profile, PublishEngineKind.Dotnet, "deploy", rememberedPassword,
             credentialStoreAvailable: true);
     }
 
     [Fact]
-    public void Saved_password_collapses_the_credential_fields()
+    public void Saved_password_makes_the_row_ready()
     {
         var profile = Profile(rememberedPassword: "secret");
 
-        Assert.False(profile.ShowCredentials);
+        Assert.True(profile.CredentialsReady);
+        Assert.False(profile.NeedsPassword);
         Assert.Equal("deploy (password saved)", profile.CredentialsSummary);
-
-        profile.ToggleCredentialsCommand.Execute(null);
-        Assert.True(profile.ShowCredentials);
     }
 
     [Fact]
-    public void Missing_password_shows_the_credential_fields()
+    public void Missing_password_asks_for_one()
     {
-        Assert.True(Profile(rememberedPassword: null).ShowCredentials);
+        var profile = Profile(rememberedPassword: null);
+
+        Assert.False(profile.CredentialsReady);
+        Assert.True(profile.NeedsPassword);
+        Assert.Equal("deploy (no password)", profile.CredentialsSummary);
+    }
+
+    [Fact]
+    public void Library_credentials_are_shown_by_entry_name()
+    {
+        var profile = Profile(rememberedPassword: null);
+        var entry = new SavedCredential { Name = "Prod deploy", UserName = "svc-deploy" };
+
+        profile.ApplyCredentials(new ResolvedCredentials(CredentialSource.Library, entry, "svc-deploy", "pw"), rememberPassword: true);
+
+        Assert.Same(entry, profile.CredentialEntry);
+        Assert.True(profile.CredentialsReady);
+        Assert.Equal("Prod deploy (svc-deploy)", profile.CredentialsSummary);
+        Assert.Equal("svc-deploy", profile.BuildCredentials().UserName);
+        Assert.Equal("pw", profile.BuildCredentials().Password);
+    }
+
+    [Fact]
+    public void A_password_typed_for_the_session_is_not_called_saved()
+    {
+        var profile = Profile(rememberedPassword: null);
+
+        profile.ApplyCredentials(new ResolvedCredentials(CredentialSource.Own, null, "deploy", "typed"), rememberPassword: false);
+
+        Assert.True(profile.CredentialsReady);
+        Assert.Equal("deploy (password for this session)", profile.CredentialsSummary);
     }
 
     [Fact]

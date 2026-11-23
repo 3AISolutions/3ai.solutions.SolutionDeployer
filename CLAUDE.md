@@ -47,9 +47,16 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**
   - `AppSettings.TargetTags`: user tags per deploy target, keyed like `RememberedUserNames` (profile file path or
     `ScriptTarget.CredentialKey`); `NormalizeTags` trims and dedupes case-insensitively, keeping the user's casing.
+  - Credentials: a target (keyed by profile file path or `ScriptTarget.CredentialKey`) uses either its *own*
+    username (`RememberedUserNames`) + opt-in password (`ICredentialStore`, same key), or a shared entry of the
+    credential library (`AppSettings.Credentials`: `SavedCredential`, password under `credential:{id}`) via
+    `CredentialAssignments` (target key → entry id). `Configuration/TargetCredentials` resolves and saves both; a
+    reference to a missing entry falls back to the target's own. `Publishing/CredentialTester` checks them without
+    deploying: a read-only `msdeploy -verb:dump` of an MSDeploy profile's site (password masked in the log), or a
+    script's optional `ScriptTarget.TestCommand` (cmd / sh, credential env vars set, exit code 0 = OK; output redacted).
   - `Configuration/SettingsTransfer` exports/imports `AppSettings` (optionally AES-256-GCM, PBKDF2 key from a
     password); machine-local fields (window, sign-in entry, MCP, auto-export) are left out and kept on restore
-    (`KeepLocal`). Saved passwords (`SecretKeys`: the profile/script/S3 keys the settings refer to, never the MCP
+    (`KeepLocal`). Saved passwords (`SecretKeys`: the profile/script/library/S3 keys the settings refer to, never the MCP
     token or the export password) go only inside an *encrypted* export, and import drops any for other keys.
     `SettingsAutoExporter` listens to `SettingsStore.Saved` and rewrites the user's export file (debounced, only
     when the settings or saved passwords changed); its password lives in `ICredentialStore` under
@@ -76,7 +83,11 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   `Services/McpDeployerBridge` over `MainWindowViewModel` (on the UI thread) — an MCP deploy *is* the window's
   deploy, minus the confirm/summary dialogs. Deploys return a `DeploymentRun` at once; clients poll `get_run`.
   `list_targets` returns each target's tags and takes `tags` (target must have all of them, plus `filter`).
-  Passwords never travel over MCP: targets must have theirs saved in the app.
+  Passwords never travel over MCP: targets must have theirs saved in the app (`credentialsReady` follows library
+  references).
+  Credentials are edited per row (⋯ → Credentials…: `TargetCredentialsWindow`, saved at once, Test) and in the library
+  manager (`CredentialLibraryWindow`), both shown by `Services/CredentialsDialogService`; rows hold the resolved
+  credentials (`ICredentialTarget`), and a deploy opens the dialog for any selected row still missing a password.
 - **`tests/SolutionDeployer.Core.Tests`** — xUnit. Fixtures under `Fixtures/` are copied to output;
   project/solution files need **explicit** `<None Include>` (default globs exclude them).
 
