@@ -85,8 +85,11 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   The output console is `ViewModels/OutputLog`: each `LogLine` carries its target row (null for run-wide lines) and a
   per-target colour; clicking a row (`OutputTarget`) shows only its lines, and every deploy clears it first.
   `AppSettings.ShowSummaryAfterDeploy` turns off the summary window after a window deploy.
-  Rows (`ITaggedTarget`) show tag chips; "Edit tags…" in the row menu opens `TagEditorWindow` from code-behind. The list's
-  tag filter (`TagFilterOptions`) shows targets with **all** ticked tags AND the text filter; Select All ticks visible rows only.
+  Rows (`ITaggedTarget`) show tag chips, sorted for display by `TagList.Comparer` (settings keep the order given);
+  "Edit tags…" in the row menu opens `TagEditorWindow` from code-behind, which lists the tags other targets use as
+  click-to-add chips. The list's tag filter (`TagFilterOptions`) shows targets with **all** ticked tags AND the text
+  filter; Select All ticks visible rows only. The strip's expand/collapse button (`ToggleExpandAll`) collapses every
+  solution and project if any shown one is open, otherwise expands them all.
 - **`src/SolutionDeployer.Mcp`** — MCP server (official `ModelContextProtocol.AspNetCore` SDK, Kestrel in-process) on
   `http://localhost:47821/mcp`, loopback only, `Authorization: Bearer` token required (token kept in
   `ICredentialStore`, never settings). `DeployerTools` call `IDeployerHost`, which the app implements in

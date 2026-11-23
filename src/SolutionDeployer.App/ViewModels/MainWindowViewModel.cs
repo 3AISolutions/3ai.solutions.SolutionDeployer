@@ -105,7 +105,7 @@ public partial class MainWindowViewModel : ObservableObject
         _mcpServerEnabled = _settings.McpServerEnabled;
         _mcpStatus = mcpServer.StatusText;
         mcpServer.StatusChanged += () => Dispatcher.UIThread.Post(() => McpStatus = _mcpServer.StatusText);
-        Sources.CollectionChanged += (_, _) => OnTargetTagsChanged();
+        Sources.CollectionChanged += OnSourcesChanged;
         SyncRecent();
     }
 
@@ -756,6 +756,50 @@ public partial class MainWindowViewModel : ObservableObject
             source.IsVisible = noFilter || (sourceMatch && noTags) || anyProjectVisible;
             if (!noFilter && source.IsVisible)
                 source.IsExpanded = true;
+        }
+    }
+
+    // ---- Expand / collapse ------------------------------------------------
+
+    private void OnSourcesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var source in e.NewItems?.OfType<SourceViewModel>() ?? [])
+            source.PropertyChanged += OnSourcePropertyChanged;
+        foreach (var source in e.OldItems?.OfType<SourceViewModel>() ?? [])
+            source.PropertyChanged -= OnSourcePropertyChanged;
+        OnTargetTagsChanged();
+        OnExpansionChanged();
+    }
+
+    private void OnSourcePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SourceViewModel.IsExpanded) or nameof(SourceViewModel.IsVisible))
+            OnExpansionChanged();
+    }
+
+    /// <summary>True when some shown solution / project is open, so the toggle collapses; otherwise it expands.</summary>
+    public bool IsAnyExpanded => Sources.Any(s => s.IsVisible && s.IsExpanded);
+
+    public string ExpandCollapseTip => IsAnyExpanded
+        ? "Collapse all solutions and projects (hide their targets)"
+        : "Expand all solutions and projects (show their targets)";
+
+    private void OnExpansionChanged()
+    {
+        OnPropertyChanged(nameof(IsAnyExpanded));
+        OnPropertyChanged(nameof(ExpandCollapseTip));
+    }
+
+    /// <summary>Collapses every solution / project (and the projects inside solutions) if any is open, else expands them all.</summary>
+    [RelayCommand]
+    private void ToggleExpandAll()
+    {
+        var expand = !IsAnyExpanded;
+        foreach (var source in Sources)
+        {
+            foreach (var project in source.Projects)
+                project.IsExpanded = expand; // a flattened project keeps itself open; its source header collapses it
+            source.IsExpanded = expand;
         }
     }
 
