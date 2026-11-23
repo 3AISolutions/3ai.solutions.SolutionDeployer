@@ -67,6 +67,18 @@ public sealed class LocalBackupStore : IBackupStore
         return Task.FromResult(new DownloadedPackage(backup.PackagePath, IsTemporary: false));
     }
 
+    public Task<LastDeployment?> GetLastDeploymentAsync(string profileKey, CancellationToken cancellationToken = default)
+    {
+        var path = Path.Combine(_root, profileKey, LastDeployment.FileName);
+        return Task.FromResult(File.Exists(path) ? LastDeployment.Deserialize(File.ReadAllText(path)) : null);
+    }
+
+    public Task SaveLastDeploymentAsync(string profileKey, LastDeployment deployment, CancellationToken cancellationToken = default)
+    {
+        File.WriteAllText(ResolveKey(profileKey, LastDeployment.FileName), deployment.Serialize());
+        return Task.CompletedTask;
+    }
+
     public Task DeleteAsync(DeploymentBackup backup, CancellationToken cancellationToken = default)
     {
         TryDelete(backup.PackagePath);

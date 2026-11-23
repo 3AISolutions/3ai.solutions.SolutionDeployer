@@ -88,6 +88,10 @@
         <Style Selector="Border.row.selected:pointerover">
             <Setter Property="Background" Value="#332888FF" />
         </Style>
+        <!-- The row whose output alone is shown (clicked): an outline, independent of the tick -->
+        <Style Selector="Border.row.outputFocused">
+            <Setter Property="BoxShadow" Value="inset 0 0 0 1 #D9822B" />
+        </Style>
 
         <!-- Run status dot: hollow = waiting, pulsing blue = deploying, green / red / amber = result -->
         <Style Selector="Panel.status">
@@ -405,7 +409,8 @@
                                                             <ItemsControl ItemsSource="{Binding Profiles}">
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate x:DataType="vm:ProfileViewModel">
-                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" IsVisible="{Binding IsVisible}">
+                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" Classes.outputFocused="{Binding IsOutputFocused}"
+                                                                                IsVisible="{Binding IsVisible}" Tapped="OnTargetRowTapped">
                                                                             <Grid ColumnDefinitions="Auto,*">
                                                                                 <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding IsSelected}"
                                                                                           VerticalAlignment="Center" MinWidth="0" Margin="0,-4,8,-4" />
@@ -446,8 +451,15 @@
                                                                                         <TextBlock Text="{Binding Details}" Classes="meta" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
                                                                                         <TextBlock Text="{Binding Method}" Classes="meta" IsVisible="{Binding !$parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
                                                                                     </Panel>
-                                                                                    <TextBlock Grid.Column="4" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
-                                                                                               MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                    <!-- This run's result; otherwise when (and by whom) the target was last deployed -->
+                                                                                    <Panel Grid.Column="4">
+                                                                                        <TextBlock Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
+                                                                                                   MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                        <TextBlock Text="{Binding LastDeploymentText}" Classes="meta" Opacity="0.6"
+                                                                                                   MaxWidth="160" TextTrimming="CharacterEllipsis"
+                                                                                                   ToolTip.Tip="{Binding LastDeploymentTip}"
+                                                                                                   IsVisible="{Binding ResultText, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                                                                                    </Panel>
                                                                                     <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4">
                                                                                         <Button Classes="small" Content="{Binding BackupBadge}"
                                                                                                 IsVisible="{Binding SupportsBackup}"
@@ -502,7 +514,8 @@
                                                             <ItemsControl ItemsSource="{Binding ScriptTargets}" IsVisible="{Binding HasScripts}">
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate x:DataType="vm:ScriptTargetViewModel">
-                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" IsVisible="{Binding IsVisible}">
+                                                                        <Border Classes="row" Classes.selected="{Binding IsSelected}" Classes.outputFocused="{Binding IsOutputFocused}"
+                                                                                IsVisible="{Binding IsVisible}" Tapped="OnTargetRowTapped">
                                                                             <Grid ColumnDefinitions="Auto,*">
                                                                                 <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding IsSelected}"
                                                                                           VerticalAlignment="Center" MinWidth="0" Margin="0,-4,8,-4" />
@@ -542,8 +555,15 @@
                                                                                     <TextBlock Grid.Column="4" Text="{Binding Summary}" Classes="meta"
                                                                                                ToolTip.Tip="{Binding Summary}"
                                                                                                IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
-                                                                                    <TextBlock Grid.Column="5" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
-                                                                                               MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                    <!-- This run's result; otherwise when (and by whom) the target was last deployed -->
+                                                                                    <Panel Grid.Column="5">
+                                                                                        <TextBlock Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
+                                                                                                   MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
+                                                                                        <TextBlock Text="{Binding LastDeploymentText}" Classes="meta" Opacity="0.6"
+                                                                                                   MaxWidth="160" TextTrimming="CharacterEllipsis"
+                                                                                                   ToolTip.Tip="{Binding LastDeploymentTip}"
+                                                                                                   IsVisible="{Binding ResultText, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                                                                                    </Panel>
                                                                                     <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4">
                                                                                         <Button Classes="small" Content="{Binding BackupBadge}"
                                                                                                 IsVisible="{Binding SupportsBackup}"
@@ -599,17 +619,22 @@
             <Border Grid.Column="2" Classes="card" Background="#0A000000" Padding="0">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Classes="strip">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Classes="small" Content="Clear" Command="{Binding ClearLogCommand}"
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="{Binding OutputTitle}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="Click a target in the list to see only its output; click it again to see everything" />
+                            <Button Grid.Column="1" Classes="small" Content="Show all" Command="{Binding ShowAllOutputCommand}"
+                                    IsVisible="{Binding IsOutputFiltered}" ToolTip.Tip="Show the output of every target" />
+                            <Button Grid.Column="2" Classes="small" Content="Clear" Command="{Binding ClearLogCommand}"
                                     ToolTip.Tip="Clear the output" />
                         </Grid>
                     </Border>
                     <ScrollViewer Name="LogScroller">
-                        <ItemsControl ItemsSource="{Binding Log}" Margin="8,4,12,4">
+                        <ItemsControl ItemsSource="{Binding VisibleLog}" Margin="8,4,12,4">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:LogLine">
-                                    <TextBlock Classes="logline" Classes.error="{Binding IsError}" Text="{Binding Text}" />
+                                    <TextBlock Classes="logline" Classes.error="{Binding IsError}">
+                                        <Run Text="{Binding Prefix}" Foreground="{Binding TargetBrush}" FontWeight="SemiBold" /><Run Text="{Binding Text}" />
+                                    </TextBlock>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

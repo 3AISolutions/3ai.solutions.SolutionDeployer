@@ -2,10 +2,13 @@ using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SolutionDeployer.App.ViewModels;
 
 namespace SolutionDeployer.App.Views;
@@ -28,7 +31,7 @@ public partial class MainWindow : Window
         if (DataContext is not MainWindowViewModel vm)
             return;
 
-        vm.Log.CollectionChanged += OnLogChanged;
+        vm.VisibleLog.CollectionChanged += OnLogChanged;
 
         // Restore size before the window is shown (avoids a resize flash). Position needs Screens,
         // so it waits for Opened.
@@ -96,6 +99,24 @@ public partial class MainWindow : Window
         // Auto-scroll the output to the newest line.
         Dispatcher.UIThread.Post(() => this.FindControl<ScrollViewer>("LogScroller")?.ScrollToEnd(),
             DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// Clicking a target row (not its tick box, buttons or menus) shows only that target's output; clicking it
+    /// again shows everything.
+    /// </summary>
+    private void OnTargetRowTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || (sender as Control)?.DataContext is not BackupHostViewModel row)
+            return;
+
+        for (var v = e.Source as Visual; v is not null && !ReferenceEquals(v, sender); v = v.GetVisualParent())
+        {
+            if (v is ToggleButton or Button)
+                return;
+        }
+
+        vm.ToggleOutputTarget(row);
     }
 
     private async void OnRecentMenuClick(object? sender, RoutedEventArgs e)

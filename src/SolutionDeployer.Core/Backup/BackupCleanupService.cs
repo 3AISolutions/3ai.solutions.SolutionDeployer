@@ -20,6 +20,12 @@ public enum BackupOwnerStatus
 
     /// <summary>Taken before snapshots recorded their owner, and not matched to any profile the app knows of.</summary>
     Unknown,
+
+    /// <summary>
+    /// In a shared (S3) destination, belonging to a target that isn't loaded on this machine: likely a teammate's,
+    /// so it is never taken for gone.
+    /// </summary>
+    NotLoadedHere,
 }
 
 /// <summary>Every snapshot one owner has in one destination.</summary>
@@ -85,6 +91,7 @@ public sealed class BackupCleanupPlan
         BackupOwnerStatus.Orphaned => "owner no longer exists",
         BackupOwnerStatus.OldDestination => "owner now backs up elsewhere",
         BackupOwnerStatus.Unknown => "owner unknown",
+        BackupOwnerStatus.NotLoadedHere => "target not loaded on this machine",
         _ => "deleted by user",
     };
 }
@@ -208,10 +215,14 @@ public sealed class BackupCleanupService(IBackupStoreProvider storeProvider, Set
                 .GroupBy(BackupService.KeyFor, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-            var scripts = settings.ScriptTargets.Values.SelectMany(list => list).ToList();
-            _scriptsByKey = scripts
-                .GroupBy(s => BackupService.KeyFor(BackupOwner.ForScript(s, string.Empty)), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            // Scripts are kept per project file, and their folder key includes the project's folder.
+            var scriptOwners = settings.ScriptTargets
+                .SelectMany(kv => kv.Value.Select(s => (Script: s, Directory: Path.GetDirectoryName(kv.Key) ?? string.Empty)))
+                .ToList();
+            var scripts = scriptOwners.Select(o => o.Script).ToList();
+            _scriptsByKey = scriptOwners
+                .GroupBy(o => BackupService.KeyFor(BackupOwner.ForScript(o.Script, o.Directory)), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Script, StringComparer.OrdinalIgnoreCase);
             _scriptIds = scripts.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // Profile paths the settings remember, to identify snapshots taken before OwnerId was recorded.
@@ -233,6 +244,11 @@ public sealed class BackupCleanupService(IBackupStoreProvider storeProvider, Set
             if (_known.TryGetValue(ownerKey, out var owner))
                 return (StatusFor(owner.SettingsKey, storeTargetId), owner.Profile?.FilePath ?? owner.Script!.Id);
 
+            // A shared bucket holds the whole team's targets: one this machine doesn't know isn't gone.
+            var gone = string.Equals(storeTargetId, S3BackupTarget.LocalId, StringComparison.OrdinalIgnoreCase)
+                ? BackupOwnerStatus.Orphaned
+                : BackupOwnerStatus.NotLoadedHere;
+
             // Script ids are ids, profile owners are rooted file paths.
             var isScript = ownerId is not null
                 ? _scriptIds.Contains(ownerId) || !Path.IsPathRooted(ownerId)
@@ -243,7 +259,7 @@ public sealed class BackupCleanupService(IBackupStoreProvider storeProvider, Set
                 // Settings hold every script there is, so one missing from them is gone.
                 return _scriptsByKey.TryGetValue(ownerKey, out var script)
                     ? (StatusFor(script.CredentialKey, storeTargetId), script.Id)
-                    : (BackupOwnerStatus.Orphaned, ownerId);
+                    : (gone, ownerId);
             }
 
             if (ownerId is null)
@@ -255,7 +271,7 @@ public sealed class BackupCleanupService(IBackupStoreProvider storeProvider, Set
 
             return File.Exists(ownerId)
                 ? (StatusFor(ownerId, storeTargetId), ownerId)
-                : (BackupOwnerStatus.Orphaned, ownerId);
+                : (gone, ownerId);
         }
 
         private BackupOwnerStatus StatusFor(string settingsKey, string storeTargetId) =>

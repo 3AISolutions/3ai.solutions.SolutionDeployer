@@ -38,6 +38,13 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
     using MSBuild-only Web Deploy features (parameters, skip rules, DB publishing …; `DirectDeployEligibility`)
     publish as before, and a failed sync falls back to the engine. Each job's steps are timed (`StepTimings` →
     `PublishResult.Steps`, logged as `[timing]`).
+  - Snapshot folders (`BackupService.KeyFor`) are the same on every machine so a team sharing a bucket shares each
+    target's history: a profile is keyed by its project folder, .pubxml name and destination, a script by its project
+    folder, script path, arguments and backup target (never a local path or the per-user script id). Each snapshot
+    records `CreatedBy`; the store that lists a snapshot sets its `StorageTargetId` (each person's S3 destination has
+    its own id). A successful deploy writes `LastDeployment` (`last-deployment.info`, not `.json`, so listings skip it)
+    into the owner's folder; rows and `list_targets` show it. In an S3 store, an owner not loaded here is
+    `NotLoadedHere`, never `Orphaned`.
   - Because partial snapshots chain, deletion only ever removes an owner's *oldest* snapshots
     (`BackupRetention`): deleting one also deletes every older partial one. `BackupCleanupService`
     inventories all stores and classifies owners (active / old destination / orphaned / unknown) via
@@ -75,6 +82,9 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   `MainWindowViewModel` (options save as they change) and returns an `OptionsFollowUp` so the backup windows,
   which the main window owns, open after it closes. File › Exit calls `Shutdown()` like the tray's Quit, so it quits
   even with close-to-tray.
+  The output console is `ViewModels/OutputLog`: each `LogLine` carries its target row (null for run-wide lines) and a
+  per-target colour; clicking a row (`OutputTarget`) shows only its lines, and every deploy clears it first.
+  `AppSettings.ShowSummaryAfterDeploy` turns off the summary window after a window deploy.
   Rows (`ITaggedTarget`) show tag chips; "Edit tags…" in the row menu opens `TagEditorWindow` from code-behind. The list's
   tag filter (`TagFilterOptions`) shows targets with **all** ticked tags AND the text filter; Select All ticks visible rows only.
 - **`src/SolutionDeployer.Mcp`** — MCP server (official `ModelContextProtocol.AspNetCore` SDK, Kestrel in-process) on

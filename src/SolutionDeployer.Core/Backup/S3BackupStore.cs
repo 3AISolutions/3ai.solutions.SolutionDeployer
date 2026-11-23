@@ -65,7 +65,11 @@ public sealed class S3BackupStore : IBackupStore
                 using var reader = new StreamReader(get.ResponseStream);
                 var json = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
                 if (BackupManifest.Deserialize(json) is { } backup)
+                {
+                    // Whoever took it, it is read (restored, deleted) through this destination.
+                    backup.StorageTargetId = TargetId;
                     manifests.Add(backup);
+                }
             }
 
             request.ContinuationToken = response.NextContinuationToken;
@@ -110,6 +114,33 @@ public sealed class S3BackupStore : IBackupStore
         using var client = CreateClient();
         await client.DeleteObjectAsync(_config.Bucket, backup.PackagePath, cancellationToken).ConfigureAwait(false);
         await client.DeleteObjectAsync(_config.Bucket, BackupManifest.ManifestKey(backup.PackagePath), cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<LastDeployment?> GetLastDeploymentAsync(string profileKey, CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient();
+        try
+        {
+            using var get = await client.GetObjectAsync(_config.Bucket, ResolveKey(profileKey, LastDeployment.FileName), cancellationToken)
+                .ConfigureAwait(false);
+            using var reader = new StreamReader(get.ResponseStream);
+            return LastDeployment.Deserialize(await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task SaveLastDeploymentAsync(string profileKey, LastDeployment deployment, CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient();
+        await client.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = _config.Bucket,
+            Key = ResolveKey(profileKey, LastDeployment.FileName),
+            ContentBody = deployment.Serialize(),
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Verifies the connection/credentials by listing the bucket (used by the "Test" button).</summary>

@@ -154,6 +154,9 @@ public sealed class AppSettings
     /// <summary>Ask for confirmation (listing the targets) before a deploy runs.</summary>
     public bool ConfirmBeforeDeploy { get; set; } = true;
 
+    /// <summary>Open the summary window (each target's result and timings) when a deploy finishes.</summary>
+    public bool ShowSummaryAfterDeploy { get; set; } = true;
+
     /// <summary>Closing the window hides it to the tray (the app keeps running) instead of quitting.</summary>
     public bool CloseToTray { get; set; } = true;
 

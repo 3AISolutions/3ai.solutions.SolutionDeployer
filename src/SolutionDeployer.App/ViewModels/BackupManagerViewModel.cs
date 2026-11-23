@@ -23,13 +23,14 @@ public sealed partial class BackupGroupViewModel(BackupOwnerGroup group, string 
     /// <summary>The profile file or script id, for the tooltip.</summary>
     public string OwnerTip => Group.OwnerId ?? Group.OwnerKey;
 
-    public bool NeedsAttention => Group.Status != BackupOwnerStatus.Active;
+    public bool NeedsAttention => Group.Status is not (BackupOwnerStatus.Active or BackupOwnerStatus.NotLoadedHere);
 
     public string StatusText => Group.Status switch
     {
         BackupOwnerStatus.Active => "Active",
         BackupOwnerStatus.OldDestination => "Old destination",
         BackupOwnerStatus.Orphaned => "Orphaned",
+        BackupOwnerStatus.NotLoadedHere => "Not loaded here",
         _ => "Unknown",
     };
 
@@ -39,6 +40,9 @@ public sealed partial class BackupGroupViewModel(BackupOwnerGroup group, string 
         BackupOwnerStatus.OldDestination =>
             "The profile or script now backs up to a different destination, so these snapshots are no longer listed or pruned under it.",
         BackupOwnerStatus.Orphaned => "The publish profile file or script no longer exists.",
+        BackupOwnerStatus.NotLoadedHere =>
+            "In a shared destination, from a profile or script that isn't loaded on this machine: probably a teammate's. " +
+            "Load its solution to see it here.",
         _ => "Taken by an older version that did not record its owner, and not matched to any profile the app knows of. " +
              "Load its solution to identify it.",
     };
@@ -162,7 +166,7 @@ public partial class BackupManagerViewModel : ObservableObject
 
             var snapshots = _inventory.Groups.Sum(g => g.Snapshots.Count);
             var bytes = _inventory.Groups.Sum(g => g.TotalBytes);
-            var unneeded = _inventory.Groups.Count(g => g.Status != BackupOwnerStatus.Active);
+            var unneeded = _inventory.Groups.Count(g => g.Status is not (BackupOwnerStatus.Active or BackupOwnerStatus.NotLoadedHere));
             Summary = $"{snapshots} snapshot(s) · {DeploymentBackup.FormatSize(bytes)} across {_inventory.Groups.Count} target(s)" +
                       (unneeded > 0 ? $" · {unneeded} no longer in use" : string.Empty);
             Errors = _inventory.Errors.Count == 0
@@ -229,14 +233,14 @@ public partial class BackupManagerViewModel : ObservableObject
         }
 
         var plan = BackupCleanupPlan.ForGroups(chosen);
-        var active = chosen.Count(g => g.Status == BackupOwnerStatus.Active);
+        var active = chosen.Count(g => g.Status is BackupOwnerStatus.Active or BackupOwnerStatus.NotLoadedHere);
         var message =
             $"Delete all {plan.Deletions.Count} snapshot(s) ({DeploymentBackup.FormatSize(plan.BytesReclaimed)}) of " +
             $"{chosen.Count} target(s)?" + Environment.NewLine + Environment.NewLine +
             Describe(plan) +
             (active > 0
                 ? Environment.NewLine + Environment.NewLine +
-                  $"{active} of them still in use: their deployments can no longer be rolled back."
+                  $"{active} of them may still be in use (here or by a teammate): their deployments can no longer be rolled back."
                 : string.Empty);
 
         await ApplyAsync(plan, "Delete snapshots", message);
