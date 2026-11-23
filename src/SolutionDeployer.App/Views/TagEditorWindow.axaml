@@ -48,6 +48,33 @@
             <Button Grid.Column="1" Content="Add" Command="{Binding AddCommand}" />
         </Grid>
 
+        <!-- Tags used on other targets; a click adds one -->
+        <StackPanel Spacing="6" IsVisible="{Binding HasSuggestions}">
+            <TextBlock Text="EXISTING TAGS — CLICK TO ADD" Classes="caption" />
+            <ScrollViewer MaxHeight="160">
+                <ItemsControl ItemsSource="{Binding Suggestions}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Button Classes="small" Padding="8,0" Height="24" CornerRadius="10"
+                                    Background="#1A26A69A" BorderBrush="#5526A69A" BorderThickness="1"
+                                    ToolTip.Tip="Add this tag"
+                                    Command="{Binding $parent[Window].((vm:TagEditorViewModel)DataContext).AddExistingCommand}"
+                                    CommandParameter="{Binding}">
+                                <TextBlock>
+                                    <Run Text="+ " Foreground="#26A69A" FontWeight="SemiBold" /><Run Text="{Binding}" />
+                                </TextBlock>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </StackPanel>
+
         <Border Classes="footer">
             <StackPanel Classes="buttons">
                 <Button Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />

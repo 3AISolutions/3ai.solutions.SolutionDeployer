@@ -84,7 +84,7 @@ public sealed class TargetTagTests : IDisposable
     {
         var vm = await LoadTaggedAsync();
 
-        Assert.Equal(["prod", "EU"], Profile(vm, "Prod").Tags);
+        Assert.Equal(["EU", "prod"], Profile(vm, "Prod").Tags); // rows sort; settings keep the order given
         Assert.Equal(["EU", "prod", "staging"], vm.TagFilterOptions.Select(o => o.Tag));
         Assert.Equal(["prod", "EU"], new SettingsStore(_settingsPath).Load()
             .GetTargetTags(Profile(vm, "Prod").Profile.FilePath));
@@ -169,7 +169,7 @@ public sealed class TargetTagTests : IDisposable
 
         await vm.RefreshAllCommand.ExecuteAsync(null);
 
-        Assert.Equal(["staging", "eu"], Profile(vm, "Staging").Tags);
+        Assert.Equal(["eu", "staging"], Profile(vm, "Staging").Tags);
         Assert.True(vm.IsTagFilterActive);
         Assert.False(Profile(vm, "Prod").IsVisible);
         Assert.True(Profile(vm, "Staging").IsVisible);
@@ -203,7 +203,7 @@ public sealed class TargetTagTests : IDisposable
 
         editor.NewTag = " eu , Prod, us-east ";
         editor.AddCommand.Execute(null);
-        Assert.Equal(["prod", "eu", "us-east"], editor.Tags);
+        Assert.Equal(["eu", "prod", "us-east"], editor.Tags);
         Assert.Equal(["staging"], editor.Suggestions);
         Assert.Equal(string.Empty, editor.NewTag);
 
@@ -211,7 +211,7 @@ public sealed class TargetTagTests : IDisposable
         editor.NewTag = "linux"; // typed but not added: Save keeps it
         editor.SaveCommand.Execute(null);
 
-        Assert.Equal(["eu", "us-east", "linux"], editor.Result);
+        Assert.Equal(["eu", "linux", "us-east"], editor.Result);
     }
 
     [Fact]
@@ -223,5 +223,52 @@ public sealed class TargetTagTests : IDisposable
         editor.CancelCommand.Execute(null);
 
         Assert.Null(editor.Result);
+    }
+
+    [Fact]
+    public void Clicking_an_existing_tag_adds_it_in_sorted_place()
+    {
+        var editor = new TagEditorViewModel("Prod", ["web", "Linux"], ["staging", "EU", "web"]);
+        Assert.Equal(["Linux", "web"], editor.Tags);
+        Assert.Equal(["EU", "staging"], editor.Suggestions);
+        Assert.True(editor.HasSuggestions);
+
+        editor.AddExistingCommand.Execute("EU");
+        editor.AddExistingCommand.Execute("staging");
+
+        Assert.Equal(["EU", "Linux", "staging", "web"], editor.Tags);
+        Assert.Empty(editor.Suggestions);
+        Assert.False(editor.HasSuggestions);
+    }
+
+    [Fact]
+    public async Task Row_tags_are_sorted_whatever_order_they_were_added_in()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.OpenRecentCommand.ExecuteAsync(_projectPath);
+
+        vm.SetTargetTags(Profile(vm, "Prod"), ["web", "EU", "prod"]);
+        vm.SetTargetTags(Profile(vm, "Staging"), ["prod", "web", "eu"]);
+
+        Assert.Equal(["EU", "prod", "web"], Profile(vm, "Prod").Tags);
+        Assert.Equal(["eu", "prod", "web"], Profile(vm, "Staging").Tags);
+    }
+
+    [Fact]
+    public async Task Expand_collapse_toggle_closes_everything_then_opens_everything()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.OpenRecentCommand.ExecuteAsync(_projectPath);
+        var source = vm.Sources.Single();
+        Assert.True(vm.IsAnyExpanded);
+
+        vm.ToggleExpandAllCommand.Execute(null);
+        Assert.False(source.IsExpanded);
+        Assert.False(vm.IsAnyExpanded);
+
+        vm.ToggleExpandAllCommand.Execute(null);
+        Assert.True(source.IsExpanded);
+        Assert.All(source.Projects, p => Assert.True(p.IsExpanded));
+        Assert.True(vm.IsAnyExpanded);
     }
 }

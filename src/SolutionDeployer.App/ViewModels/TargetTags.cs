@@ -12,13 +12,20 @@ public interface ITaggedTarget
     TagList Tags { get; }
 }
 
-/// <summary>A row's tags, shown as chips.</summary>
+/// <summary>A row's tags, shown as chips, always sorted so every row lists them the same way.</summary>
 public sealed class TagList : ObservableCollection<string>
 {
+    /// <summary>The order tags are shown in: alphabetical ignoring case (ties by exact spelling, so it's stable).</summary>
+    public static readonly IComparer<string> Comparer = Comparer<string>.Create((a, b) =>
+    {
+        var byName = StringComparer.OrdinalIgnoreCase.Compare(a, b);
+        return byName != 0 ? byName : StringComparer.Ordinal.Compare(a, b);
+    });
+
     public void Replace(IEnumerable<string> tags)
     {
         Clear();
-        foreach (var tag in tags)
+        foreach (var tag in tags.Order(Comparer))
             Add(tag);
     }
 

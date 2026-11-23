@@ -21,7 +21,7 @@
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
             <TextBlock Text="Export / restore settings" Classes="heading" />
             <TextBlock Classes="subheading"
-                       Text="An export holds your sources, script targets, selections, backup destinations, deploy history and options. A password-protected export can also hold the saved passwords (profiles, scripts, S3 secret keys); an export without a password never does." />
+                       Text="An export holds your sources, script targets, selections, target tags, the credential library (usernames), backup destinations, deploy history and options. A password-protected export can also hold the saved passwords (profiles, scripts, S3 secret keys); an export without a password never does." />
         </StackPanel>
 
         <Border DockPanel.Dock="Bottom" Classes="footer">
@@ -121,7 +121,7 @@
                             <TextBox Text="{Binding RestorePassword}" PasswordChar="•" />
                         </StackPanel>
                         <TextBlock Classes="hint" IsVisible="{Binding HasRestoreFile}"
-                                   Text="Replaces your sources, script targets, selections, backup destinations and options with the export's. Saved passwords in the export are saved on this computer, replacing the same ones here. Window placement, start-at-sign-in, Claude (MCP) and the automatic export stay as they are here. Your current settings (without passwords) are exported to settings.before-restore.json first." />
+                                   Text="Replaces your sources, script targets, selections, target tags, credential library, backup destinations and options with the export's. Saved passwords in the export are saved on this computer, replacing the same ones here. Window placement, start-at-sign-in, Claude (MCP) and the automatic export stay as they are here. Your current settings (without passwords) are exported to settings.before-restore.json first." />
                         <Button Content="Restore these settings" Command="{Binding RestoreCommand}" Classes="danger"
                                 IsEnabled="{Binding HasRestoreFile}" />
                         <TextBlock Text="A deploy is running. Restore once it has finished." Classes="hint"

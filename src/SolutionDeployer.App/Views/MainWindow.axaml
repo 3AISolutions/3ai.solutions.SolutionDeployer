@@ -304,12 +304,22 @@
                 <DockPanel>
                     <!-- List strip: filter + selection helpers -->
                     <Border DockPanel.Dock="Top" Classes="strip">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                             <TextBox Grid.Column="0" Classes="small" Text="{Binding FilterText}"
                                      PlaceholderText="Filter projects / profiles…"
                                      ToolTip.Tip="Filter the tree by source, project, profile or script name" />
+                            <!-- Collapse everything when something is open, otherwise expand everything -->
+                            <Button Grid.Column="1" Classes="small" Padding="7,0" IsVisible="{Binding HasSources}"
+                                    Command="{Binding ToggleExpandAllCommand}" ToolTip.Tip="{Binding ExpandCollapseTip}">
+                                <Panel Width="14" Height="14">
+                                    <PathIcon Width="14" Height="14" Data="{StaticResource IconCollapseAll}"
+                                              IsVisible="{Binding IsAnyExpanded}" />
+                                    <PathIcon Width="14" Height="14" Data="{StaticResource IconExpandAll}"
+                                              IsVisible="{Binding !IsAnyExpanded}" />
+                                </Panel>
+                            </Button>
                             <!-- Tag filter: targets must have every ticked tag (and match the text) -->
-                            <Button Grid.Column="1" Classes="small" Classes.accent="{Binding IsTagFilterActive}"
+                            <Button Grid.Column="2" Classes="small" Classes.accent="{Binding IsTagFilterActive}"
                                     IsVisible="{Binding HasTagFilterOptions}"
                                     ToolTip.Tip="Show only targets that have ALL the ticked tags (combined with the text filter)">
                                 <TextBlock Text="{Binding TagFilterLabel}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
@@ -332,7 +342,7 @@
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
                                 <Button Classes="small" Content="Select All" Command="{Binding SelectAllCommand}" />
                                 <Button Classes="small" Content="Clear" Command="{Binding ClearSelectionCommand}"
                                         ToolTip.Tip="Untick everything" />
