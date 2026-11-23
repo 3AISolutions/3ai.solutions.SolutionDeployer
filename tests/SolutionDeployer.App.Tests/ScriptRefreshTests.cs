@@ -58,7 +58,7 @@ public sealed class ScriptRefreshTests : IDisposable
             new FakeFilePicker(), new UpdateService(), new NullCredentialStore(), editor, backupService,
             new FakeDeployConfirmation(), new FakeGitHistory(), new FakeReleaseSummary(), new FakeRemoteTargets(),
             new FakeUpdatePrompt(), whatsNew, new FakeDeploySummary(), new FakeBackupManager(),
-            new FakeAutoStart(), new FakeMcpServer(), new FakeSettingsBackup());
+            new FakeAutoStart(), new FakeMcpServer(), new FakeSettingsBackup(), new FakeSnapshots());
 
         return (vm, editor, whatsNew);
     }

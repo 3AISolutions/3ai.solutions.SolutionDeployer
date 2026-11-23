@@ -1,0 +1,112 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.SnapshotsWindow"
+        x:DataType="vm:SnapshotsViewModel"
+        Title="{Binding Title}"
+        Width="780" Height="480" MinWidth="600" MinHeight="340"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <Window.Styles>
+        <Style Selector="ListBox.snapshots ListBoxItem">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="TextBlock.attention">
+            <Setter Property="Foreground" Value="#D98E04" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock Text="{Binding Host.Name}" Classes="heading" />
+            <TextBlock Classes="subheading"
+                       Text="Snapshots taken before each deploy of this target. Restoring one puts the target back to how it was before that deploy." />
+        </StackPanel>
+
+        <!-- Store + refresh -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8" Margin="0,0,0,8">
+            <TextBlock Grid.Column="0" Text="Store" Classes="label" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" Classes="small" MinWidth="200"
+                      ItemsSource="{Binding Host.BackupDestinations}"
+                      SelectedItem="{Binding Host.SelectedDestination, Mode=TwoWay}"
+                      ToolTip.Tip="Where this target's snapshots are stored (local disk or a configured remote)" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0"
+                        IsVisible="{Binding Host.IsLoadingBackups}">
+                <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" VerticalAlignment="Center" />
+                <TextBlock Text="Loading snapshots…" Classes="meta" />
+            </StackPanel>
+            <Button Grid.Column="3" Classes="small" Content="Refresh" Command="{Binding RefreshCommand}"
+                    ToolTip.Tip="Read the snapshot list from the store again" />
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Host.BackupsError}" Classes="problem" TextWrapping="Wrap"
+                   Margin="0,0,0,6"
+                   IsVisible="{Binding Host.BackupsError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Border DockPanel.Dock="Bottom" Classes="footer">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding Status}" VerticalAlignment="Center" Margin="0,0,10,0"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
+                <StackPanel Grid.Column="1" Classes="buttons">
+                    <Button Content="Delete…" Command="{Binding DeleteCommand}" Classes="danger"
+                            ToolTip.Tip="Delete the selected snapshot (and any older partial ones that need it)" />
+                    <Button Content="Restore" Command="{Binding RestoreCommand}" Classes="accent"
+                            ToolTip.Tip="Roll the target back to how it was before the selected snapshot's deploy (a Web Deploy rollback also undoes every newer deploy)" />
+                    <Button Content="Close" Command="{Binding CloseCommand}" IsCancel="True" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- What restoring the selection does; amber when it also undoes newer deploys -->
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding RestoreNote}" Classes="hint" Margin="0,8,0,0"
+                   Classes.attention="{Binding RestoreUndoesNewer}"
+                   IsVisible="{Binding RestoreNote, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Border Classes="card" Padding="2">
+            <DockPanel>
+                <!-- Column headers: widths match the item template below -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="44,150,70,76,170,*" ColumnSpacing="10" Margin="10,6,10,4">
+                    <TextBlock Grid.Column="0" Text="#" Classes="caption" />
+                    <TextBlock Grid.Column="1" Text="TAKEN" Classes="caption" />
+                    <TextBlock Grid.Column="2" Text="KIND" Classes="caption" />
+                    <TextBlock Grid.Column="3" Text="SIZE" Classes="caption" />
+                    <TextBlock Grid.Column="4" Text="CHANGES" Classes="caption" />
+                    <TextBlock Grid.Column="5" Text="FROM" Classes="caption" />
+                </Grid>
+                <Panel>
+                    <TextBlock Text="No snapshots yet. One is taken before each deploy while “Back up before publishing” is on."
+                               Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center" Margin="20"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding IsEmpty}" />
+                    <ListBox Classes="snapshots" Background="Transparent"
+                             ItemsSource="{Binding Host.Backups}"
+                             SelectedItem="{Binding Host.SelectedBackup, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:BackupEntryViewModel">
+                                <Grid ColumnDefinitions="44,150,70,76,170,*" ColumnSpacing="10"
+                                      ToolTip.Tip="{Binding DisplayName}">
+                                    <TextBlock Grid.Column="0" Text="{Binding SequenceText}" Classes="cell" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="1" Text="{Binding CreatedText}" Classes="cell" />
+                                    <TextBlock Grid.Column="2" Text="{Binding KindText}" Classes="cell"
+                                               ToolTip.Tip="{Binding KindTip}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding SizeText}" Classes="cell" />
+                                    <TextBlock Grid.Column="4" Text="{Binding ChangesText}" Classes="cell" />
+                                    <TextBlock Grid.Column="5" Text="{Binding SourceText}" Classes="meta"
+                                               ToolTip.Tip="{Binding SourceText}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Panel>
+            </DockPanel>
+        </Border>
+    </DockPanel>
+</Window>
