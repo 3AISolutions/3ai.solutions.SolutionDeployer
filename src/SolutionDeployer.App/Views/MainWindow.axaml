@@ -145,6 +145,7 @@
         <KeyBinding Gesture="Ctrl+Shift+O" Command="{Binding AddProjectCommand}" />
         <KeyBinding Gesture="F5" Command="{Binding RefreshAllCommand}" />
         <KeyBinding Gesture="Ctrl+Enter" Command="{Binding DeployCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding TogglePathsCommand}" />
     </Window.KeyBindings>
 
     <DockPanel>
@@ -154,10 +155,10 @@
                 <Menu>
                     <MenuItem Header="_File">
                         <MenuItem Header="Add _Solution…" Command="{Binding AddSolutionCommand}" InputGesture="Ctrl+O">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconAddSolution}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="solution" Data="{StaticResource IconAddSolution}" /></MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="Add _Project…" Command="{Binding AddProjectCommand}" InputGesture="Ctrl+Shift+O">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconAddProject}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="project" Data="{StaticResource IconAddProject}" /></MenuItem.Icon>
                         </MenuItem>
                         <!-- Items are the recent paths; a click on one bubbles up to OnRecentMenuClick -->
                         <MenuItem Header="_Recent" ItemsSource="{Binding RecentSolutions}"
@@ -173,19 +174,27 @@
                         </MenuItem>
                         <Separator />
                         <MenuItem Header="_Refresh" Command="{Binding RefreshAllCommand}" InputGesture="F5">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconRefresh}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="refresh" Data="{StaticResource IconRefresh}" /></MenuItem.Icon>
                         </MenuItem>
                         <Separator />
                         <MenuItem Header="_Export / restore settings…" Command="{Binding ExportRestoreSettingsCommand}" />
                         <Separator />
                         <MenuItem Header="E_xit" Click="OnExitClick" />
                     </MenuItem>
+                    <MenuItem Header="_View">
+                        <!-- The command flips the setting; IsChecked only mirrors it (a two-way IsChecked on a
+                             menu-bar item never reached the view model) -->
+                        <MenuItem Header="Show _paths" ToggleType="CheckBox"
+                                  IsChecked="{Binding ShowPaths, Mode=OneWay}" Command="{Binding TogglePathsCommand}"
+                                  InputGesture="Ctrl+Shift+P"
+                                  ToolTip.Tip="Show solution / project paths, the publish engine and target addresses in the list (hover a .pubxml / Script tag to see them when hidden)" />
+                    </MenuItem>
                     <MenuItem Header="_Deploy">
                         <MenuItem Header="_Deploy Selected" Command="{Binding DeployCommand}" InputGesture="Ctrl+Enter">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconDeploy}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="deploy" Data="{StaticResource IconDeploy}" /></MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="_Cancel" Command="{Binding CancelCommand}">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconStop}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="stop" Data="{StaticResource IconStop}" /></MenuItem.Icon>
                         </MenuItem>
                         <Separator />
                         <MenuItem Header="Select _All" Command="{Binding SelectAllCommand}" />
@@ -193,11 +202,13 @@
                     </MenuItem>
                     <MenuItem Header="_Tools">
                         <MenuItem Header="_Options…" Click="OnOptionsClick" InputGesture="Ctrl+OemComma">
-                            <MenuItem.Icon><PathIcon Data="{StaticResource IconSettings}" /></MenuItem.Icon>
+                            <MenuItem.Icon><PathIcon Classes="settings" Data="{StaticResource IconSettings}" /></MenuItem.Icon>
                         </MenuItem>
                         <Separator />
                         <MenuItem Header="_Credentials…" Command="{Binding ManageCredentialsCommand}"
-                                  ToolTip.Tip="Saved usernames and passwords that targets can share" />
+                                  ToolTip.Tip="Saved usernames and passwords that targets can share">
+                            <MenuItem.Icon><PathIcon Classes="key" Data="{StaticResource IconKey}" /></MenuItem.Icon>
+                        </MenuItem>
                         <Separator />
                         <MenuItem Header="Backup _destinations…" Command="{Binding ManageBackupTargetsCommand}" />
                         <MenuItem Header="_Manage backups…" Command="{Binding ManageBackupsCommand}" />
@@ -213,20 +224,20 @@
                         <Button Classes="tool" Command="{Binding AddSolutionCommand}"
                                 ToolTip.Tip="Add a solution (Ctrl+O)">
                             <StackPanel>
-                                <PathIcon Data="{StaticResource IconAddSolution}" />
+                                <PathIcon Classes="solution" Data="{StaticResource IconAddSolution}" />
                                 <TextBlock Text="Solution" />
                             </StackPanel>
                         </Button>
                         <Button Classes="tool" Command="{Binding AddProjectCommand}"
                                 ToolTip.Tip="Add a standalone project (Ctrl+Shift+O)">
                             <StackPanel>
-                                <PathIcon Data="{StaticResource IconAddProject}" />
+                                <PathIcon Classes="project" Data="{StaticResource IconAddProject}" />
                                 <TextBlock Text="Project" />
                             </StackPanel>
                         </Button>
                         <Button Classes="tool" Command="{Binding RefreshAllCommand}"
                                 ToolTip.Tip="Refresh: re-read all added sources from disk (F5)">
-                            <PathIcon Data="{StaticResource IconRefresh}" />
+                            <PathIcon Classes="refresh" Data="{StaticResource IconRefresh}" />
                         </Button>
                         <Border Classes="toolSeparator" />
                         <Button Classes="tool accent" Command="{Binding DeployCommand}"
@@ -238,16 +249,25 @@
                         </Button>
                         <Button Classes="tool" Command="{Binding CancelCommand}"
                                 ToolTip.Tip="Cancel the running deploy">
-                            <PathIcon Data="{StaticResource IconStop}" />
+                            <PathIcon Classes="stop" Data="{StaticResource IconStop}" />
                         </Button>
                         <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Opacity="0.7">
                             <Run Text="{Binding SelectedCount}" /><Run Text=" selected" />
                         </TextBlock>
                     </StackPanel>
-                    <Button Grid.Column="2" Classes="tool" Click="OnOptionsClick" HotKey="Ctrl+OemComma"
-                            ToolTip.Tip="Options (Ctrl+,)">
-                        <PathIcon Data="{StaticResource IconSettings}" />
-                    </Button>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                        <Button Classes="tool" Classes.off="{Binding !ShowPaths}" Command="{Binding TogglePathsCommand}"
+                                ToolTip.Tip="Show or hide solution / project paths, the publish engine and target addresses (Ctrl+Shift+P). When hidden, hover a .pubxml / Script tag to see them">
+                            <StackPanel>
+                                <PathIcon Classes="eye" Data="{StaticResource IconEye}" />
+                                <TextBlock Text="Paths" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="tool" Click="OnOptionsClick" HotKey="Ctrl+OemComma"
+                                ToolTip.Tip="Options (Ctrl+,)">
+                            <PathIcon Classes="settings" Data="{StaticResource IconSettings}" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </StackPanel>
         </Border>
@@ -339,7 +359,8 @@
                                                 <TextBlock Grid.Column="4" Text="{Binding Problem}" Classes="problem"
                                                            IsVisible="{Binding HasProblem}" />
                                                 <TextBlock Grid.Column="5" Text="{Binding Path}" Classes="meta" Opacity="0.4"
-                                                           ToolTip.Tip="{Binding Path}" />
+                                                           ToolTip.Tip="{Binding Path}"
+                                                           IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
                                                 <Button Grid.Column="6" Classes="small" Content="+ Script"
                                                         IsVisible="{Binding IsSingleProject}"
                                                         ToolTip.Tip="Add a script deployment to this project"
@@ -401,7 +422,8 @@
                                                                                     </Panel>
                                                                                     <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
                                                                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                                                                                        <Border Classes="pill">
+                                                                                        <!-- Hover shows what the Paths toggle may hide: method · engine · address -->
+                                                                                        <Border Classes="pill" ToolTip.Tip="{Binding Details}">
                                                                                             <TextBlock Text="{Binding FormatLabel}" Opacity="0.8" />
                                                                                         </Border>
                                                                                         <ItemsControl ItemsSource="{Binding Tags}" VerticalAlignment="Center" IsVisible="{Binding !!Tags.Count}">
@@ -420,32 +442,38 @@
                                                                                         </ItemsControl>
                                                                                     </StackPanel>
                                                                                     <!-- Method · engine · target in one line, so it's the part that shrinks -->
-                                                                                    <TextBlock Grid.Column="3" Text="{Binding Details}" Classes="meta"
-                                                                                               ToolTip.Tip="{Binding Details}" />
+                                                                                    <Panel Grid.Column="3" ToolTip.Tip="{Binding Details}">
+                                                                                        <TextBlock Text="{Binding Details}" Classes="meta" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
+                                                                                        <TextBlock Text="{Binding Method}" Classes="meta" IsVisible="{Binding !$parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
+                                                                                    </Panel>
                                                                                     <TextBlock Grid.Column="4" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
                                                                                                MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
                                                                                     <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4">
-                                                                                        <Button Classes="small" Content="Summary"
-                                                                                                ToolTip.Tip="Commit history for this project and its dependencies since the last deploy"
-                                                                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ReleaseSummaryCommand}"
-                                                                                                CommandParameter="{Binding}" />
                                                                                         <Button Classes="small" Content="{Binding BackupBadge}"
                                                                                                 IsVisible="{Binding SupportsBackup}"
                                                                                                 ToolTip.Tip="Saved deployment snapshots of this profile: restore or delete them"
                                                                                                 Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSnapshotsCommand}"
                                                                                                 CommandParameter="{Binding}" />
-                                                                                        <Button Classes="small" Content="Set password" IsVisible="{Binding NeedsPassword}"
-                                                                                                Foreground="#D08000" Click="OnRowCredentialsClick"
-                                                                                                ToolTip.Tip="This target needs a password to deploy: open its Credentials" />
+                                                                                        <Button Classes="rowIcon" IsVisible="{Binding NeedsPassword}" Click="OnRowCredentialsClick"
+                                                                                                ToolTip.Tip="Set password: this target needs a password to deploy">
+                                                                                            <PathIcon Classes="key" Data="{StaticResource IconKey}" />
+                                                                                        </Button>
                                                                                         <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options"
                                                                                                 Click="OnRowMenuClick">
                                                                                             <Button.Flyout>
                                                                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                                                                    <MenuItem Header="Release summary…" Click="OnReleaseSummaryClick"
+                                                                                                              ToolTip.Tip="Commit history for this project and its dependencies since the last deploy">
+                                                                                                        <MenuItem.Icon><PathIcon Classes="summary" Data="{StaticResource IconSummary}" /></MenuItem.Icon>
+                                                                                                    </MenuItem>
+                                                                                                    <Separator />
                                                                                                     <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
                                                                                                               IsVisible="{Binding RequiresCredentials}" />
                                                                                                     <MenuItem Header="Credentials…" Click="OnCredentialsClick"
                                                                                                               IsVisible="{Binding RequiresCredentials}"
-                                                                                                              ToolTip.Tip="Choose a saved credential or this target's own username and password, save it, and test it" />
+                                                                                                              ToolTip.Tip="Choose a saved credential or this target's own username and password, save it, and test it">
+                                                                                                        <MenuItem.Icon><PathIcon Classes="key" Data="{StaticResource IconKey}" /></MenuItem.Icon>
+                                                                                                    </MenuItem>
                                                                                                     <Separator IsVisible="{Binding RequiresCredentials}" />
                                                                                                     <MenuItem Header="Publish engine" ToolTip.Tip="{Binding EngineHint}">
                                                                                                         <MenuItem Header="dotnet publish" ToggleType="Radio" GroupName="engine"
@@ -490,7 +518,8 @@
                                                                                     </Panel>
                                                                                     <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
                                                                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                                                                                        <Border Classes="pill" Background="#33A06CFF">
+                                                                                        <!-- Hover shows the script path and arguments, which the Paths toggle may hide -->
+                                                                                        <Border Classes="pill" Background="#33A06CFF" ToolTip.Tip="{Binding Summary}">
                                                                                             <TextBlock Text="Script" Opacity="0.85" />
                                                                                         </Border>
                                                                                         <ItemsControl ItemsSource="{Binding Tags}" VerticalAlignment="Center" IsVisible="{Binding !!Tags.Count}">
@@ -511,7 +540,8 @@
                                                                                     <TextBlock Grid.Column="3" Text="{Binding Problem}" Classes="problem"
                                                                                                IsVisible="{Binding HasProblem}" />
                                                                                     <TextBlock Grid.Column="4" Text="{Binding Summary}" Classes="meta"
-                                                                                               ToolTip.Tip="{Binding Summary}" />
+                                                                                               ToolTip.Tip="{Binding Summary}"
+                                                                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowPaths}" />
                                                                                     <TextBlock Grid.Column="5" Text="{Binding ResultText}" Classes="meta" Opacity="0.85"
                                                                                                MaxWidth="160" ToolTip.Tip="{Binding ResultText}" />
                                                                                     <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4">
@@ -520,9 +550,10 @@
                                                                                                 ToolTip.Tip="Saved snapshots of this script's target: restore or delete them"
                                                                                                 Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSnapshotsCommand}"
                                                                                                 CommandParameter="{Binding}" />
-                                                                                        <Button Classes="small" Content="Set password" IsVisible="{Binding NeedsPassword}"
-                                                                                                Foreground="#D08000" Click="OnRowCredentialsClick"
-                                                                                                ToolTip.Tip="This target needs a password to deploy: open its Credentials" />
+                                                                                        <Button Classes="rowIcon" IsVisible="{Binding NeedsPassword}" Click="OnRowCredentialsClick"
+                                                                                                ToolTip.Tip="Set password: this target needs a password to deploy">
+                                                                                            <PathIcon Classes="key" Data="{StaticResource IconKey}" />
+                                                                                        </Button>
                                                                                         <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Script options"
                                                                                                 Click="OnRowMenuClick">
                                                                                             <Button.Flyout>

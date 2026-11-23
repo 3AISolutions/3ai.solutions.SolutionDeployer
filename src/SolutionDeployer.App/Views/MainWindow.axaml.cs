@@ -177,6 +177,12 @@ public partial class MainWindow : Window
             await vm.RemoveSourceCommand.ExecuteAsync(source);
     }
 
+    private async void OnReleaseSummaryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && _menuRow is ProfileViewModel profile)
+            await vm.ReleaseSummaryCommand.ExecuteAsync(profile);
+    }
+
     private async void OnEditScriptClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)

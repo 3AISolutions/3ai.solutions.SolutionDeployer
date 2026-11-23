@@ -93,6 +93,7 @@ public partial class MainWindowViewModel : ObservableObject
         _settings.MigrateLegacy();
 
         _runInParallel = _settings.RunInParallel;
+        _showPaths = _settings.ShowPaths;
         _backupBeforePublish = _settings.BackupBeforePublish;
         _deployBackupPreview = _settings.DeployBackupPreview;
         _confirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
@@ -141,6 +142,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _restoreSourcesOnStartup;
+
+    /// <summary>Show source paths and target addresses in the list; remembered in settings.</summary>
+    [ObservableProperty]
+    private bool _showPaths;
+
+    partial void OnShowPathsChanged(bool value)
+    {
+        _settings.ShowPaths = value;
+        _settingsStore.Save(_settings);
+    }
+
+    [RelayCommand]
+    private void TogglePaths() => ShowPaths = !ShowPaths;
 
     /// <summary>Free-text filter applied to the sources/projects/profiles/scripts tree.</summary>
     [ObservableProperty]
@@ -1265,6 +1279,7 @@ public partial class MainWindowViewModel : ObservableObject
         DeployBackupPreview = _settings.DeployBackupPreview;
         ConfirmBeforeDeploy = _settings.ConfirmBeforeDeploy;
         RestoreSourcesOnStartup = _settings.RestoreSourcesOnStartup;
+        ShowPaths = _settings.ShowPaths;
         CloseToTray = _settings.CloseToTray;
         UpdateRepository = _settings.UpdateRepository;
         SyncRecent();

@@ -175,6 +175,9 @@ public sealed class AppSettings
     /// </summary>
     public SettingsAutoExport AutoExport { get; set; } = new();
 
+    /// <summary>Show source paths and target addresses in the list (the toolbar's Paths toggle).</summary>
+    public bool ShowPaths { get; set; } = true;
+
     // --- Last window placement (restored on startup). Null until first saved. ---
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
