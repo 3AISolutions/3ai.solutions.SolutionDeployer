@@ -19,9 +19,11 @@ internal static class Program
     public static void Main(string[] args)
     {
         // Must run first: handles Velopack install/update/uninstall hooks and may exit the process.
-        VelopackApp.Build()
-            .OnBeforeUninstallFastCallback(_ => AutoStartService.Remove())
-            .Run();
+        var velopack = VelopackApp.Build();
+        // Velopack only runs uninstall hooks on Windows (elsewhere the app is just deleted).
+        if (OperatingSystem.IsWindows())
+            velopack = velopack.OnBeforeUninstallFastCallback(_ => AutoStartService.Remove());
+        velopack.Run();
 
         StartInBackground = args.Contains(AutoStartService.BackgroundArgument);
 

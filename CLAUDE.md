@@ -4,7 +4,7 @@ Guidance for working in this repository.
 
 ## What this is
 
-Cross-platform desktop app to publish .NET solutions from their publish profiles. .NET 10.
+Cross-platform desktop app to publish .NET solutions from their publish profiles. .NET 11.
 
 ## Architecture
 
