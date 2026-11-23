@@ -188,4 +188,19 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm && _menuRow is ScriptTargetViewModel script)
             await vm.RemoveScriptCommand.ExecuteAsync(script);
     }
+
+    private async void OnEditTagsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || _menuRow is not BackupHostViewModel row ||
+            row is not ITaggedTarget target)
+            return;
+
+        var editor = new TagEditorViewModel(row.Name, target.Tags, vm.KnownTags);
+        var window = new TagEditorWindow { DataContext = editor };
+        editor.CloseRequested += window.Close;
+        await window.ShowDialog(this);
+
+        if (editor.Result is { } tags)
+            vm.SetTargetTags(target, tags);
+    }
 }

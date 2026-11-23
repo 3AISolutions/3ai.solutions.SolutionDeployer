@@ -45,6 +45,8 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   - `MsBuildPublishEngine` publishes classic (non-SDK) web projects via `DeployOnBuild` through their
     solution (`/t:<SolutionTargetName>`) — `/t:Publish` is ClickOnce there and silently skips them.
   - `Configuration/SettingsStore` persists `AppSettings` as JSON. **Never persist passwords.**
+  - `AppSettings.TargetTags`: user tags per deploy target, keyed like `RememberedUserNames` (profile file path or
+    `ScriptTarget.CredentialKey`); `NormalizeTags` trims and dedupes case-insensitively, keeping the user's casing.
   - `Configuration/SettingsTransfer` exports/imports `AppSettings` (optionally AES-256-GCM, PBKDF2 key from a
     password); machine-local fields (window, sign-in entry, MCP, auto-export) are left out and kept on restore
     (`KeepLocal`). Saved passwords (`SecretKeys`: the profile/script/S3 keys the settings refer to, never the MCP
@@ -66,11 +68,14 @@ Cross-platform desktop app to publish .NET solutions from their publish profiles
   `MainWindowViewModel` (options save as they change) and returns an `OptionsFollowUp` so the backup windows,
   which the main window owns, open after it closes. File › Exit calls `Shutdown()` like the tray's Quit, so it quits
   even with close-to-tray.
+  Rows (`ITaggedTarget`) show tag chips; "Edit tags…" in the row menu opens `TagEditorWindow` from code-behind. The list's
+  tag filter (`TagFilterOptions`) shows targets with **all** ticked tags AND the text filter; Select All ticks visible rows only.
 - **`src/SolutionDeployer.Mcp`** — MCP server (official `ModelContextProtocol.AspNetCore` SDK, Kestrel in-process) on
   `http://localhost:47821/mcp`, loopback only, `Authorization: Bearer` token required (token kept in
   `ICredentialStore`, never settings). `DeployerTools` call `IDeployerHost`, which the app implements in
   `Services/McpDeployerBridge` over `MainWindowViewModel` (on the UI thread) — an MCP deploy *is* the window's
   deploy, minus the confirm/summary dialogs. Deploys return a `DeploymentRun` at once; clients poll `get_run`.
+  `list_targets` returns each target's tags and takes `tags` (target must have all of them, plus `filter`).
   Passwords never travel over MCP: targets must have theirs saved in the app.
 - **`tests/SolutionDeployer.Core.Tests`** — xUnit. Fixtures under `Fixtures/` are copied to output;
   project/solution files need **explicit** `<None Include>` (default globs exclude them).

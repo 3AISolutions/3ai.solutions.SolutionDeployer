@@ -9,7 +9,7 @@ namespace SolutionDeployer.App.ViewModels;
 /// A selectable publish profile. Carries its own engine choice and (non-persisted) credentials so
 /// that any combination of profiles can be queued with per-target settings.
 /// </summary>
-public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
+public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget, ITaggedTarget
 {
     public ProfileViewModel(
         ProjectViewModel parent,
@@ -47,6 +47,10 @@ public partial class ProfileViewModel : BackupHostViewModel, ISelectableTarget
     public override string Name => Profile.Name;
 
     public override BackupOwner BackupOwner => BackupOwner.ForProfile(Profile, Parent.Project.ProjectDirectory);
+
+    public string TagKey => Profile.FilePath;
+
+    public TagList Tags { get; } = [];
 
     public string FormatLabel => Profile.Format == PublishProfileFormat.PublishSettings ? ".PublishSettings" : ".pubxml";
 

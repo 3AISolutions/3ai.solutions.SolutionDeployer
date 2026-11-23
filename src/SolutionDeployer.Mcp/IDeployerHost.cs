@@ -53,6 +53,7 @@ public sealed record TargetInfo(
     bool SupportsBackup,
     string? Problem,
     string? LastStatus,
-    string? LastResult);
+    string? LastResult,
+    IReadOnlyList<string> Tags);
 
 public sealed record BackupInfo(string Id, long Sequence, DateTimeOffset CreatedUtc, string Kind, bool IsPartial, string Description, string? Source);
