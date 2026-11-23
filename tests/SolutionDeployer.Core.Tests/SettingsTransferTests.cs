@@ -37,6 +37,7 @@ public sealed class SettingsTransferTests : IDisposable
         settings.Sources.Add(DeploymentSource.Solution(@"C:\repo\SecretProject.slnx"));
         settings.SetScriptTargets(@"C:\repo\Web\Web.csproj", [new ScriptTarget { Name = "Deploy", ScriptPath = "deploy.ps1" }]);
         settings.RememberedUserNames[@"C:\repo\Web\Properties\PublishProfiles\Prod.pubxml"] = "deployer";
+        settings.SetTargetTags(@"C:\repo\Web\Properties\PublishProfiles\Prod.pubxml", ["prod", "EU"]);
         return settings;
     }
 
@@ -54,6 +55,7 @@ public sealed class SettingsTransferTests : IDisposable
         Assert.Equal(@"C:\repo\SecretProject.slnx", Assert.Single(imported.Sources).Path);
         Assert.Equal("Deploy", Assert.Single(imported.GetScriptTargets(@"C:\repo\Web\Web.csproj")).Name);
         Assert.Equal("deployer", imported.RememberedUserNames.Values.Single());
+        Assert.Equal(["prod", "EU"], imported.GetTargetTags(@"C:\repo\Web\Properties\PublishProfiles\Prod.pubxml"));
 
         Assert.Null(imported.WindowWidth);
         Assert.Null(imported.WindowX);
@@ -107,6 +109,33 @@ public sealed class SettingsTransferTests : IDisposable
 
         File.WriteAllText(path, "not json");
         Assert.Throws<InvalidDataException>(() => SettingsTransfer.Import(path, null));
+    }
+
+    [Fact]
+    public void Encrypted_export_carries_target_tags()
+    {
+        var path = Path.Combine(_tempDir, "tags.sdsettings");
+        SettingsTransfer.Export(SampleSettings(), path, password: "pa55word");
+
+        var imported = SettingsTransfer.Import(path, "pa55word").Settings;
+
+        Assert.Equal(["prod", "EU"], imported.TargetTags.Values.Single());
+    }
+
+    [Fact]
+    public void Target_tags_are_trimmed_and_deduplicated_ignoring_case()
+    {
+        var settings = new AppSettings();
+
+        settings.SetTargetTags("a.pubxml", [" Prod ", "prod", "", null, "EU", "eu ", "Web"]);
+        settings.SetTargetTags("script:1", ["web", "Linux"]);
+
+        Assert.Equal(["Prod", "EU", "Web"], settings.GetTargetTags("a.pubxml"));
+        Assert.Equal(["EU", "Linux", "Prod", "Web"], settings.AllTargetTags());
+
+        settings.SetTargetTags("a.pubxml", ["  "]);
+        Assert.False(settings.TargetTags.ContainsKey("a.pubxml"));
+        Assert.Empty(settings.GetTargetTags("a.pubxml"));
     }
 
     [Fact]

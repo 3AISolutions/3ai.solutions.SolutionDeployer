@@ -14,20 +14,44 @@ public sealed class DeployerTools(IDeployerHost host, RunRegistry runs)
     [McpServerTool(Name = "list_targets", Title = "List deploy targets", ReadOnly = true, Idempotent = true)]
     [Description("Lists the solutions and projects added to Solution Deployer and their deploy targets: publish profiles " +
                  "and deployment scripts. Use a target's id with deploy, list_backups and get_release_summary. " +
-                 "credentialsReady=false means the target needs a password that is not saved in the app; save it there first.")]
+                 "credentialsReady=false means the target needs a password that is not saved in the app; save it there first. " +
+                 "Each target lists the tags the user gave it in the app (e.g. prod, staging, eu); pass tags to list only " +
+                 "targets that have all of them.")]
     public async Task<DeployerSnapshot> ListTargets(
         [Description("Optional text to match against source, project, target or destination names.")] string? filter = null,
+        [Description("Optional tags (case-insensitive): only targets that have every one of them are listed. " +
+                     "Combined with filter (both must match).")] string[]? tags = null,
         CancellationToken cancellationToken = default)
     {
         var snapshot = await Call(() => host.GetTargetsAsync(cancellationToken));
-        if (string.IsNullOrWhiteSpace(filter))
+        return Filter(snapshot, filter, tags);
+    }
+
+    /// <summary>
+    /// Narrows a snapshot to targets matching <paramref name="filter"/> (a source match keeps all its targets) that
+    /// also carry every tag in <paramref name="tags"/>. Sources left without targets are dropped.
+    /// </summary>
+    public static DeployerSnapshot Filter(DeployerSnapshot snapshot, string? filter, IReadOnlyCollection<string>? tags)
+    {
+        var text = filter?.Trim() ?? string.Empty;
+        var wanted = (tags ?? []).Select(t => t?.Trim()).OfType<string>().Where(t => t.Length > 0).ToList();
+        if (text.Length == 0 && wanted.Count == 0)
             return snapshot;
 
-        bool Match(string? text) => text?.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase) == true;
+        bool Match(string? value) => text.Length == 0 || value?.Contains(text, StringComparison.OrdinalIgnoreCase) == true;
+        bool HasTags(TargetInfo t) => wanted.All(w => t.Tags.Contains(w, StringComparer.OrdinalIgnoreCase));
+
         var sources = snapshot.Sources
-            .Select(s => Match(s.Name) || Match(s.Path)
-                ? s
-                : s with { Targets = s.Targets.Where(t => Match(t.Name) || Match(t.Project) || Match(t.Destination)).ToList() })
+            .Select(s =>
+            {
+                var sourceMatch = Match(s.Name) || Match(s.Path);
+                return s with
+                {
+                    Targets = s.Targets
+                        .Where(t => (sourceMatch || Match(t.Name) || Match(t.Project) || Match(t.Destination)) && HasTags(t))
+                        .ToList(),
+                };
+            })
             .Where(s => s.Targets.Count > 0)
             .ToList();
         return snapshot with { Sources = sources };

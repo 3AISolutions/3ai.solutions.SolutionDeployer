@@ -97,6 +97,7 @@ public partial class MainWindowViewModel : ObservableObject
         _mcpServerEnabled = _settings.McpServerEnabled;
         _mcpStatus = mcpServer.StatusText;
         mcpServer.StatusChanged += () => Dispatcher.UIThread.Post(() => McpStatus = _mcpServer.StatusText);
+        Sources.CollectionChanged += (_, _) => OnTargetTagsChanged();
         SyncRecent();
     }
 
@@ -451,6 +452,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var scriptVm = new ScriptTargetViewModel(project, script, rememberedUser, rememberedPassword, credentialsAvailable);
         scriptVm.BackupDestinationChanged += OnBackupDestinationChanged;
+        scriptVm.Tags.Replace(_settings.GetTargetTags(scriptVm.TagKey));
         ConfigureBackup(scriptVm);
         return scriptVm;
     }
@@ -473,11 +475,13 @@ public partial class MainWindowViewModel : ObservableObject
         project.ScriptTargets.Remove(script);
         project.NotifyScriptsChanged();
         _settings.RememberedUserNames.Remove(script.Target.CredentialKey);
+        _settings.TargetTags.Remove(script.TagKey);
         if (_credentialStore.IsAvailable)
             _credentialStore.Delete(script.Target.CredentialKey);
         PersistScriptTargets(project);
         OnPropertyChanged(nameof(SelectedCount));
         SaveCurrentSelection();
+        OnTargetTagsChanged();
         StatusMessage = $"Removed script '{script.Name}'.";
     }
 
@@ -538,6 +542,7 @@ public partial class MainWindowViewModel : ObservableObject
                     var profileVm = new ProfileViewModel(
                         projectVm, profile, _settings.DefaultEngine, rememberedUser, rememberedPassword, credentialsAvailable);
                     profileVm.BackupDestinationChanged += OnBackupDestinationChanged;
+                    profileVm.Tags.Replace(_settings.GetTargetTags(profileVm.TagKey));
                     ConfigureBackup(profileVm);
                     projectVm.Profiles.Add(profileVm);
                 }
@@ -656,20 +661,21 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore.Save(_settings);
     }
 
+    /// <summary>Ticks every target the filters leave visible (hidden ones keep their state).</summary>
     [RelayCommand]
-    private void SelectAll() => SetAllSelected(true);
+    private void SelectAll() => SetAllSelected(true, visibleOnly: true);
 
     [RelayCommand]
-    private void ClearSelection() => SetAllSelected(false);
+    private void ClearSelection() => SetAllSelected(false, visibleOnly: false);
 
-    private void SetAllSelected(bool value)
+    private void SetAllSelected(bool value, bool visibleOnly)
     {
         _applyingState = true;
         foreach (var project in Sources.SelectMany(s => s.Projects))
         {
-            foreach (var profile in project.Profiles)
+            foreach (var profile in project.Profiles.Where(p => !visibleOnly || p.IsVisible))
                 profile.IsSelected = value;
-            foreach (var script in project.ScriptTargets)
+            foreach (var script in project.ScriptTargets.Where(s => !visibleOnly || s.IsVisible))
                 script.IsSelected = value;
         }
         _applyingState = false;
@@ -681,14 +687,18 @@ public partial class MainWindowViewModel : ObservableObject
     // ---- Filtering --------------------------------------------------------
 
     /// <summary>
-    /// Applies <see cref="FilterText"/> across the tree: an item stays visible if it (or a relevant
-    /// ancestor/descendant) matches. Matching parents expand so results are visible.
+    /// Applies <see cref="FilterText"/> and the tag filter across the tree: a target stays visible if its text
+    /// (or a relevant ancestor's) matches AND it has every ticked tag. Matching parents expand so results are visible.
     /// </summary>
     private void ApplyFilter()
     {
         var filter = FilterText?.Trim() ?? string.Empty;
-        var noFilter = filter.Length == 0;
+        var noText = filter.Length == 0;
+        var tags = SelectedFilterTags;
+        var noTags = tags.Count == 0;
+        var noFilter = noText && noTags;
         bool Match(string? text) => text is not null && text.Contains(filter, StringComparison.OrdinalIgnoreCase);
+        bool HasTags(ITaggedTarget target) => tags.All(target.Tags.ContainsTag);
 
         foreach (var source in Sources)
         {
@@ -702,27 +712,119 @@ public partial class MainWindowViewModel : ObservableObject
 
                 foreach (var profile in project.Profiles)
                 {
-                    profile.IsVisible = noFilter || projectMatch ||
-                        Match(profile.Name) || Match(profile.Target) || Match(profile.Method);
+                    profile.IsVisible = (noText || projectMatch ||
+                        Match(profile.Name) || Match(profile.Target) || Match(profile.Method)) && HasTags(profile);
                     anyChildVisible |= profile.IsVisible;
                 }
 
                 foreach (var script in project.ScriptTargets)
                 {
-                    script.IsVisible = noFilter || projectMatch || Match(script.Name) || Match(script.ScriptPath);
+                    script.IsVisible = (noText || projectMatch || Match(script.Name) || Match(script.ScriptPath)) &&
+                                       HasTags(script);
                     anyChildVisible |= script.IsVisible;
                 }
 
-                project.IsVisible = noFilter || projectMatch || anyChildVisible;
+                // Under a tag filter a project only shows for its matching targets.
+                project.IsVisible = noFilter || (projectMatch && noTags) || anyChildVisible;
                 if (!noFilter && project.IsVisible)
                     project.IsExpanded = true;
                 anyProjectVisible |= project.IsVisible;
             }
 
-            source.IsVisible = noFilter || sourceMatch || anyProjectVisible;
+            source.IsVisible = noFilter || (sourceMatch && noTags) || anyProjectVisible;
             if (!noFilter && source.IsVisible)
                 source.IsExpanded = true;
         }
+    }
+
+    // ---- Tags -------------------------------------------------------------
+
+    private readonly HashSet<string> _filterTags = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The list's tag filter: every tag on a loaded target (plus any still ticked), sorted.</summary>
+    public ObservableCollection<TagFilterOption> TagFilterOptions { get; } = [];
+
+    public bool HasTagFilterOptions => TagFilterOptions.Count > 0;
+
+    public bool IsTagFilterActive => _filterTags.Count > 0;
+
+    /// <summary>The tag filter button's caption, e.g. "Tags" or "Tags: prod, eu".</summary>
+    public string TagFilterLabel => _filterTags.Count == 0
+        ? "Tags"
+        : "Tags: " + string.Join(", ", TagFilterOptions.Where(o => o.IsSelected).Select(o => o.Tag));
+
+    /// <summary>Every tag in use on any target, for the tag editor's suggestions.</summary>
+    public IReadOnlyList<string> KnownTags => _settings.AllTargetTags();
+
+    private IReadOnlyList<string> SelectedFilterTags => _filterTags.ToList();
+
+    private IEnumerable<ITaggedTarget> TaggedTargets => Sources.SelectMany(s => s.Projects)
+        .SelectMany(p => p.Profiles.Cast<ITaggedTarget>().Concat(p.ScriptTargets));
+
+    /// <summary>Replaces a target's tags (normalised), saves them and re-applies the filter.</summary>
+    public void SetTargetTags(ITaggedTarget target, IEnumerable<string> tags)
+    {
+        _settings.SetTargetTags(target.TagKey, tags);
+        _settingsStore.Save(_settings);
+
+        // A project added both on its own and through a solution has two rows for the same target.
+        var saved = _settings.GetTargetTags(target.TagKey);
+        foreach (var row in TaggedTargets.Where(t => t.TagKey == target.TagKey).Append(target).Distinct())
+            row.Tags.Replace(saved);
+        OnTargetTagsChanged();
+    }
+
+    [RelayCommand]
+    private void ClearTagFilter()
+    {
+        _filterTags.Clear();
+        foreach (var option in TagFilterOptions)
+            option.IsSelected = false;
+        OnTagFilterChanged();
+    }
+
+    /// <summary>Rebuilds the tag filter's options after rows or their tags changed, keeping what is ticked.</summary>
+    private void OnTargetTagsChanged()
+    {
+        var tags = TaggedTargets.SelectMany(t => t.Tags).Concat(_filterTags)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!tags.SequenceEqual(TagFilterOptions.Select(o => o.Tag)))
+        {
+            foreach (var option in TagFilterOptions)
+                option.PropertyChanged -= OnTagFilterOptionChanged;
+            TagFilterOptions.Clear();
+            foreach (var tag in tags)
+            {
+                var option = new TagFilterOption(tag, _filterTags.Contains(tag));
+                option.PropertyChanged += OnTagFilterOptionChanged;
+                TagFilterOptions.Add(option);
+            }
+            OnPropertyChanged(nameof(HasTagFilterOptions));
+            OnPropertyChanged(nameof(TagFilterLabel));
+        }
+
+        if (FilterText.Length > 0 || IsTagFilterActive)
+            ApplyFilter();
+    }
+
+    private void OnTagFilterOptionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not TagFilterOption option || e.PropertyName != nameof(TagFilterOption.IsSelected))
+            return;
+
+        var changed = option.IsSelected ? _filterTags.Add(option.Tag) : _filterTags.Remove(option.Tag);
+        if (changed)
+            OnTagFilterChanged();
+    }
+
+    private void OnTagFilterChanged()
+    {
+        OnPropertyChanged(nameof(IsTagFilterActive));
+        OnPropertyChanged(nameof(TagFilterLabel));
+        ApplyFilter();
     }
 
     // ---- Deployment -------------------------------------------------------

@@ -25,6 +25,10 @@
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="Background" Value="#11808080" />
         </Style>
+        <!-- A target's tag chips -->
+        <Style Selector="Border.pill.tag">
+            <Setter Property="Background" Value="#3326A69A" />
+        </Style>
         <!-- Header strip inside a card (list filter, output title) -->
         <Style Selector="Border.strip">
             <Setter Property="Padding" Value="8,5" />
@@ -294,11 +298,35 @@
                 <DockPanel>
                     <!-- List strip: filter + selection helpers -->
                     <Border DockPanel.Dock="Top" Classes="strip">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                             <TextBox Grid.Column="0" Classes="small" Text="{Binding FilterText}"
                                      PlaceholderText="Filter projects / profiles…"
                                      ToolTip.Tip="Filter the tree by source, project, profile or script name" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <!-- Tag filter: targets must have every ticked tag (and match the text) -->
+                            <Button Grid.Column="1" Classes="small" Classes.accent="{Binding IsTagFilterActive}"
+                                    IsVisible="{Binding HasTagFilterOptions}"
+                                    ToolTip.Tip="Show only targets that have ALL the ticked tags (combined with the text filter)">
+                                <TextBlock Text="{Binding TagFilterLabel}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight">
+                                        <StackPanel Spacing="4" MinWidth="170">
+                                            <TextBlock Text="Show targets tagged with all of:" Classes="caption" />
+                                            <ScrollViewer MaxHeight="320">
+                                                <ItemsControl ItemsSource="{Binding TagFilterOptions}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:TagFilterOption">
+                                                            <CheckBox Classes="small" Content="{Binding Tag}" IsChecked="{Binding IsSelected}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                            <Button Classes="small" Content="Clear tag filter" Command="{Binding ClearTagFilterCommand}"
+                                                    IsVisible="{Binding IsTagFilterActive}" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                                 <Button Classes="small" Content="Select All" Command="{Binding SelectAllCommand}" />
                                 <Button Classes="small" Content="Clear" Command="{Binding ClearSelectionCommand}"
                                         ToolTip.Tip="Untick everything" />
@@ -390,9 +418,25 @@
                                                                                                  Classes.cancelled="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Cancelled}}" />
                                                                                     </Panel>
                                                                                     <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
-                                                                                    <Border Grid.Column="2" Classes="pill">
-                                                                                        <TextBlock Text="{Binding FormatLabel}" Opacity="0.8" />
-                                                                                    </Border>
+                                                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                                                                                        <Border Classes="pill">
+                                                                                            <TextBlock Text="{Binding FormatLabel}" Opacity="0.8" />
+                                                                                        </Border>
+                                                                                        <ItemsControl ItemsSource="{Binding Tags}" VerticalAlignment="Center" IsVisible="{Binding !!Tags.Count}">
+                                                                                            <ItemsControl.ItemsPanel>
+                                                                                                <ItemsPanelTemplate>
+                                                                                                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                                                                                                </ItemsPanelTemplate>
+                                                                                            </ItemsControl.ItemsPanel>
+                                                                                            <ItemsControl.ItemTemplate>
+                                                                                                <DataTemplate x:DataType="x:String">
+                                                                                                    <Border Classes="pill tag" ToolTip.Tip="Tag (Edit tags… in the ⋯ menu)">
+                                                                                                        <TextBlock Text="{Binding}" />
+                                                                                                    </Border>
+                                                                                                </DataTemplate>
+                                                                                            </ItemsControl.ItemTemplate>
+                                                                                        </ItemsControl>
+                                                                                    </StackPanel>
                                                                                     <!-- Method · engine · target in one line, so it's the part that shrinks -->
                                                                                     <TextBlock Grid.Column="3" Text="{Binding Details}" Classes="meta"
                                                                                                ToolTip.Tip="{Binding Details}" />
@@ -407,7 +451,8 @@
                                                                                                 IsVisible="{Binding SupportsBackup}"
                                                                                                 ToolTip.Tip="Show/hide saved deployment snapshots for this profile"
                                                                                                 Command="{Binding ToggleBackupsCommand}" />
-                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options">
+                                                                                        <Button Classes="small ghost" Content="⋯" FontSize="14" ToolTip.Tip="Profile options"
+                                                                                                Click="OnRowMenuClick">
                                                                                             <Button.Flyout>
                                                                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                                                                                                     <MenuItem Header="{Binding CredentialsSummary}" IsEnabled="False"
@@ -425,6 +470,7 @@
                                                                                                                   Command="{Binding SetEngineCommand}"
                                                                                                                   CommandParameter="{x:Static models:PublishEngineKind.MsBuild}" />
                                                                                                     </MenuItem>
+                                                                                                    <MenuItem Header="Edit tags…" Click="OnEditTagsClick" />
                                                                                                 </MenuFlyout>
                                                                                             </Button.Flyout>
                                                                                         </Button>
@@ -476,9 +522,25 @@
                                                                                                  Classes.cancelled="{Binding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:PublishStatus.Cancelled}}" />
                                                                                     </Panel>
                                                                                     <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="name" />
-                                                                                    <Border Grid.Column="2" Classes="pill" Background="#33A06CFF">
-                                                                                        <TextBlock Text="Script" Opacity="0.85" />
-                                                                                    </Border>
+                                                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                                                                                        <Border Classes="pill" Background="#33A06CFF">
+                                                                                            <TextBlock Text="Script" Opacity="0.85" />
+                                                                                        </Border>
+                                                                                        <ItemsControl ItemsSource="{Binding Tags}" VerticalAlignment="Center" IsVisible="{Binding !!Tags.Count}">
+                                                                                            <ItemsControl.ItemsPanel>
+                                                                                                <ItemsPanelTemplate>
+                                                                                                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                                                                                                </ItemsPanelTemplate>
+                                                                                            </ItemsControl.ItemsPanel>
+                                                                                            <ItemsControl.ItemTemplate>
+                                                                                                <DataTemplate x:DataType="x:String">
+                                                                                                    <Border Classes="pill tag" ToolTip.Tip="Tag (Edit tags… in the ⋯ menu)">
+                                                                                                        <TextBlock Text="{Binding}" />
+                                                                                                    </Border>
+                                                                                                </DataTemplate>
+                                                                                            </ItemsControl.ItemTemplate>
+                                                                                        </ItemsControl>
+                                                                                    </StackPanel>
                                                                                     <TextBlock Grid.Column="3" Text="{Binding Problem}" Classes="problem"
                                                                                                IsVisible="{Binding HasProblem}" />
                                                                                     <TextBlock Grid.Column="4" Text="{Binding Summary}" Classes="meta"
@@ -499,6 +561,7 @@
                                                                                                     <MenuItem Header="{Binding CredentialsMenuText}" Command="{Binding ToggleCredentialsCommand}"
                                                                                                               IsVisible="{Binding RequiresCredentials}" />
                                                                                                     <Separator IsVisible="{Binding RequiresCredentials}" />
+                                                                                                    <MenuItem Header="Edit tags…" Click="OnEditTagsClick" />
                                                                                                     <MenuItem Header="Edit script…" Click="OnEditScriptClick" />
                                                                                                     <Separator />
                                                                                                     <MenuItem Header="Remove script…" Click="OnRemoveScriptClick" />

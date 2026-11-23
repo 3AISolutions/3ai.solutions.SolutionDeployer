@@ -67,6 +67,43 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, string> RememberedUserNames { get; set; } = new();
 
+    /// <summary>
+    /// User-chosen tags per deploy target, keyed like <see cref="RememberedUserNames"/>: the profile file path or
+    /// <see cref="Models.ScriptTarget.CredentialKey"/> (<see cref="Backup.BackupOwner.SettingsKey"/>).
+    /// </summary>
+    public Dictionary<string, List<string>> TargetTags { get; set; } = new();
+
+    public IReadOnlyList<string> GetTargetTags(string targetKey) =>
+        TargetTags.TryGetValue(targetKey, out var tags) ? tags : [];
+
+    /// <summary>Stores a target's tags, normalised (see <see cref="NormalizeTags"/>); no tags removes the entry.</summary>
+    public void SetTargetTags(string targetKey, IEnumerable<string?> tags)
+    {
+        var list = NormalizeTags(tags);
+        if (list.Count == 0)
+            TargetTags.Remove(targetKey);
+        else
+            TargetTags[targetKey] = list;
+    }
+
+    /// <summary>Every tag in use, case-insensitively distinct, sorted.</summary>
+    public IReadOnlyList<string> AllTargetTags() =>
+        NormalizeTags(TargetTags.Values.SelectMany(t => t)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Trims tags and drops blanks and case-insensitive duplicates, keeping the first spelling and order.</summary>
+    public static List<string> NormalizeTags(IEnumerable<string?> tags)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var tag in tags)
+        {
+            var trimmed = tag?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed))
+                result.Add(trimmed);
+        }
+        return result;
+    }
+
     /// <summary>GitHub "owner/repo" used by the updater to find releases.</summary>
     public string UpdateRepository { get; set; } = "3AISolutions/3ai.solutions.SolutionDeployer";
 

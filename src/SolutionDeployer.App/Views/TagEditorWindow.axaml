@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SolutionDeployer.App.ViewModels"
+        x:Class="SolutionDeployer.App.Views.TagEditorWindow"
+        x:DataType="vm:TagEditorViewModel"
+        Title="{Binding Title}"
+        Width="420" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/app-icon.ico">
+
+    <StackPanel Margin="20" Spacing="12">
+        <TextBlock Text="{Binding Title}" Classes="heading" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="Tags group targets so you can filter the list (and MCP's list_targets) by them."
+                   Classes="hint" TextWrapping="Wrap" />
+
+        <!-- Current tags; × removes one -->
+        <ItemsControl ItemsSource="{Binding Tags}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Border Classes="pill" Background="#3326A69A">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+                            <Button Classes="small ghost" Content="×" Padding="3,0" MinHeight="0"
+                                    ToolTip.Tip="Remove this tag"
+                                    Command="{Binding $parent[Window].((vm:TagEditorViewModel)DataContext).RemoveCommand}"
+                                    CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="No tags yet." Opacity="0.5"
+                   IsVisible="{Binding !Tags.Count}" />
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+            <AutoCompleteBox x:Name="NewTagBox" Grid.Column="0" Text="{Binding NewTag}"
+                             ItemsSource="{Binding Suggestions}" FilterMode="Contains" MinimumPrefixLength="0"
+                             PlaceholderText="Add a tag (e.g. prod, eu-west)…">
+                <AutoCompleteBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding AddCommand}" />
+                </AutoCompleteBox.KeyBindings>
+            </AutoCompleteBox>
+            <Button Grid.Column="1" Content="Add" Command="{Binding AddCommand}" />
+        </Grid>
+
+        <Border Classes="footer">
+            <StackPanel Classes="buttons">
+                <Button Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+                <Button Content="Save" Command="{Binding SaveCommand}" Classes="accent" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</Window>

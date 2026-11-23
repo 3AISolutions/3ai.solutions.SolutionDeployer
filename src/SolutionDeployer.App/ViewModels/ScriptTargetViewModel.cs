@@ -7,7 +7,7 @@ using SolutionDeployer.Core.Publishing;
 namespace SolutionDeployer.App.ViewModels;
 
 /// <summary>A selectable script-deployment row under a project.</summary>
-public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTarget
+public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTarget, ITaggedTarget
 {
     // Status and ResultText (below) satisfy ISelectableTarget.
     public ScriptTargetViewModel(
@@ -75,6 +75,10 @@ public partial class ScriptTargetViewModel : BackupHostViewModel, ISelectableTar
     public override string Name => Target.Name;
 
     public override BackupOwner BackupOwner => BackupOwner.ForScript(Target, Parent.ProjectDirectory);
+
+    public string TagKey => Target.CredentialKey;
+
+    public TagList Tags { get; } = [];
 
     public string ScriptPath => Target.ScriptPath;
 
